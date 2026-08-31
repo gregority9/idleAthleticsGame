@@ -72,6 +72,7 @@ namespace TrackDynasty.Mvp03.UI
     {
         private GameManager _manager;
         private Canvas _canvas;
+        private RectTransform _phoneRoot;
         private RectTransform _screenHost;
         private GameObject _header;
         private GameObject _nav;
@@ -80,12 +81,22 @@ namespace TrackDynasty.Mvp03.UI
         private Text _repText;
         private readonly Dictionary<ScreenId, GameScreen> _screens = new Dictionary<ScreenId, GameScreen>();
         private ScreenId _current;
+        private float _zoomMultiplier = 1f;
+        private int _lastScreenWidth;
+        private int _lastScreenHeight;
+        private Rect _lastSafeArea;
+
+        private const float PhoneWidth = 430f;
+        private const float PhoneHeight = 930f;
+        private const float MinZoom = 0.45f;
+        private const float MaxZoom = 1.75f;
 
         public ScreenId Current => _current;
 
         public void Initialize(GameManager manager)
         {
             _manager = manager;
+            ConfigureMobileOrientation();
             BuildCanvas();
             BuildChrome();
             BuildScreens();
@@ -102,20 +113,126 @@ namespace TrackDynasty.Mvp03.UI
             if (_manager != null) _manager.StateChanged -= OnStateChanged;
         }
 
+        private void Update()
+        {
+            HandleDesktopZoomInput();
+            UpdatePhoneViewport(false);
+        }
+
+        private void ConfigureMobileOrientation()
+        {
+            if (!Application.isMobilePlatform) return;
+            Screen.autorotateToLandscapeLeft = false;
+            Screen.autorotateToLandscapeRight = false;
+            Screen.autorotateToPortrait = true;
+            Screen.autorotateToPortraitUpsideDown = false;
+            Screen.orientation = ScreenOrientation.Portrait;
+        }
+
+        private void BuildDesktopZoomControls()
+        {
+            if (Application.isMobilePlatform) return;
+
+            GameObject controls = UIFactory.CreateRect("DesktopZoomControls", _canvas.transform);
+            RectTransform rt = UIFactory.Rect(controls);
+            rt.anchorMin = new Vector2(0f, 1f);
+            rt.anchorMax = new Vector2(0f, 1f);
+            rt.pivot = new Vector2(0f, 1f);
+            rt.anchoredPosition = new Vector2(12f, -12f);
+            rt.sizeDelta = new Vector2(224f, 42f);
+
+            HorizontalLayoutGroup layout = controls.AddComponent<HorizontalLayoutGroup>();
+            layout.spacing = 6f;
+            layout.childControlWidth = true;
+            layout.childControlHeight = true;
+            layout.childForceExpandWidth = true;
+            layout.childForceExpandHeight = true;
+
+            UIFactory.Button(controls.transform, "-", () => SetZoom(_zoomMultiplier - 0.10f), UITheme.PanelAlt, 42f);
+            UIFactory.Button(controls.transform, "FIT", () => SetZoom(1f), UITheme.PanelAlt, 42f);
+            UIFactory.Button(controls.transform, "+", () => SetZoom(_zoomMultiplier + 0.10f), UITheme.PanelAlt, 42f);
+        }
+
+        private void HandleDesktopZoomInput()
+        {
+            if (Application.isMobilePlatform) return;
+
+            bool modifier = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl) ||
+                            Input.GetKey(KeyCode.LeftCommand) || Input.GetKey(KeyCode.RightCommand);
+            if (!modifier) return;
+
+            float wheel = Input.mouseScrollDelta.y;
+            if (Mathf.Abs(wheel) > 0.01f)
+                SetZoom(_zoomMultiplier + Mathf.Sign(wheel) * 0.08f);
+
+            if (Input.GetKeyDown(KeyCode.Equals) || Input.GetKeyDown(KeyCode.KeypadPlus))
+                SetZoom(_zoomMultiplier + 0.10f);
+            if (Input.GetKeyDown(KeyCode.Minus) || Input.GetKeyDown(KeyCode.KeypadMinus))
+                SetZoom(_zoomMultiplier - 0.10f);
+            if (Input.GetKeyDown(KeyCode.Alpha0) || Input.GetKeyDown(KeyCode.Keypad0))
+                SetZoom(1f);
+        }
+
+        private void SetZoom(float value)
+        {
+            _zoomMultiplier = Mathf.Clamp(value, MinZoom, MaxZoom);
+            UpdatePhoneViewport(true);
+        }
+
+        private void UpdatePhoneViewport(bool force)
+        {
+            if (_phoneRoot == null) return;
+
+            Rect safe = Application.isMobilePlatform ? Screen.safeArea : new Rect(0f, 0f, Screen.width, Screen.height);
+            bool changed = Screen.width != _lastScreenWidth || Screen.height != _lastScreenHeight || safe != _lastSafeArea;
+            if (!force && !changed) return;
+
+            _lastScreenWidth = Screen.width;
+            _lastScreenHeight = Screen.height;
+            _lastSafeArea = safe;
+
+            float availableWidth = Mathf.Max(1f, safe.width - (Application.isMobilePlatform ? 0f : 24f));
+            float availableHeight = Mathf.Max(1f, safe.height - (Application.isMobilePlatform ? 0f : 24f));
+            float fitScale = Mathf.Min(availableWidth / PhoneWidth, availableHeight / PhoneHeight);
+            float finalScale = Mathf.Max(0.01f, fitScale * _zoomMultiplier);
+            _phoneRoot.localScale = new Vector3(finalScale, finalScale, 1f);
+
+            Vector2 screenCenter = new Vector2(Screen.width * 0.5f, Screen.height * 0.5f);
+            _phoneRoot.anchoredPosition = safe.center - screenCenter;
+        }
+
         private void BuildCanvas()
         {
-            GameObject canvasGo = new GameObject("MVP03_Canvas", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
+            GameObject canvasGo = new GameObject("MVP032_Canvas", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
             canvasGo.transform.SetParent(transform, false);
             _canvas = canvasGo.GetComponent<Canvas>();
             _canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            CanvasScaler scaler = canvasGo.GetComponent<CanvasScaler>();
-            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            scaler.referenceResolution = new Vector2(430f, 930f);
-            scaler.matchWidthOrHeight = 0.5f;
 
-            Image bg = UIFactory.Panel(canvasGo.transform, UITheme.Background, "Background");
-            UIFactory.Stretch(bg.rectTransform, 0, 0, 0, 0);
-            bg.transform.SetAsFirstSibling();
+            // The canvas itself uses screen pixels. The actual game lives inside a fixed
+            // 430 x 930 portrait phone viewport which we scale to fit the available screen.
+            // This avoids ScaleWithScreenSize enlarging a portrait UI on wide desktop windows.
+            CanvasScaler scaler = canvasGo.GetComponent<CanvasScaler>();
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ConstantPixelSize;
+            scaler.scaleFactor = 1f;
+
+            Image desktopBg = UIFactory.Panel(canvasGo.transform, new Color(0.015f, 0.02f, 0.03f, 1f), "DesktopLetterbox");
+            UIFactory.Stretch(desktopBg.rectTransform, 0, 0, 0, 0);
+            desktopBg.transform.SetAsFirstSibling();
+
+            GameObject phoneGo = UIFactory.CreateRect("PhoneViewport_430x930", canvasGo.transform);
+            _phoneRoot = UIFactory.Rect(phoneGo);
+            _phoneRoot.anchorMin = new Vector2(0.5f, 0.5f);
+            _phoneRoot.anchorMax = new Vector2(0.5f, 0.5f);
+            _phoneRoot.pivot = new Vector2(0.5f, 0.5f);
+            _phoneRoot.sizeDelta = new Vector2(PhoneWidth, PhoneHeight);
+            Image phoneBg = phoneGo.AddComponent<Image>();
+            phoneBg.color = UITheme.Background;
+            Outline phoneOutline = phoneGo.AddComponent<Outline>();
+            phoneOutline.effectColor = new Color(1f, 1f, 1f, 0.10f);
+            phoneOutline.effectDistance = new Vector2(1f, -1f);
+
+            BuildDesktopZoomControls();
+            UpdatePhoneViewport(true);
 
             if (FindFirstObjectByType<EventSystem>() == null)
             {
@@ -126,7 +243,7 @@ namespace TrackDynasty.Mvp03.UI
 
         private void BuildChrome()
         {
-            _header = UIFactory.CreateRect("Header", _canvas.transform);
+            _header = UIFactory.CreateRect("Header", _phoneRoot);
             RectTransform headerRt = UIFactory.Rect(_header);
             headerRt.anchorMin = new Vector2(0f, 1f);
             headerRt.anchorMax = new Vector2(1f, 1f);
@@ -168,13 +285,13 @@ namespace TrackDynasty.Mvp03.UI
             repRt.anchoredPosition = new Vector2(-16f, 8f);
             repRt.sizeDelta = new Vector2(140f, 20f);
 
-            _screenHost = UIFactory.Rect(UIFactory.CreateRect("ScreenHost", _canvas.transform));
+            _screenHost = UIFactory.Rect(UIFactory.CreateRect("ScreenHost", _phoneRoot));
             _screenHost.anchorMin = Vector2.zero;
             _screenHost.anchorMax = Vector2.one;
             _screenHost.offsetMin = new Vector2(0f, 64f);
             _screenHost.offsetMax = new Vector2(0f, -76f);
 
-            _nav = UIFactory.CreateRect("BottomNav", _canvas.transform);
+            _nav = UIFactory.CreateRect("BottomNav", _phoneRoot);
             RectTransform navRt = UIFactory.Rect(_nav);
             navRt.anchorMin = new Vector2(0f, 0f);
             navRt.anchorMax = new Vector2(1f, 0f);
