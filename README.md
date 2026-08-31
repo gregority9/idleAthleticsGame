@@ -1,8 +1,8 @@
-# Track Dynasty — MVP 0.3
+# Track Dynasty — MVP 0.3.2
 
 Target Unity Editor: **6000.5.10f1**
 
-MVP 0.3 is the first architectural refactor of the prototype. It removes IMGUI entirely and uses Unity UI (uGUI) with separate domain, systems, core and screen modules.
+MVP 0.3.2 continues the architectural refactor of the prototype. It removes IMGUI entirely and uses Unity UI (uGUI) with separate domain, systems, core and screen modules.
 
 ## Career loop
 
@@ -21,7 +21,10 @@ MVP 0.3 is the first architectural refactor of the prototype. It removes IMGUI e
 
 ## Recruitment
 
-- three starter scout profiles with different strengths: evaluation accuracy, talent network, or lower scouting/signing costs
+- three starter scout profiles with different strengths:
+  - evaluation accuracy
+  - talent network
+  - lower scouting/signing costs
 - scouting produces prospects with hidden exact potential and a visible estimate range
 - stronger club reputation improves the general talent pool
 - good race results can trigger **inbound applications** from athletes who want to join the club
@@ -36,7 +39,15 @@ MVP 0.3 is the first architectural refactor of the prototype. It removes IMGUI e
 - individual Development Rate
 - age curve and potential-gap based progression
 - training focuses: Sprint, Strength, Technique, Recovery
-- 8 traits with gameplay effects: Explosive Starter, Strong Finisher, Big Stage Performer, Fast Learner, Injury Prone, Late Bloomer, Consistent, Volatile
+- 8 traits with gameplay effects:
+  - Explosive Starter
+  - Strong Finisher
+  - Big Stage Performer
+  - Fast Learner
+  - Injury Prone
+  - Late Bloomer
+  - Consistent
+  - Volatile
 - race history and yearly career history
 - PB progression mini-chart
 
@@ -117,7 +128,7 @@ Assets/Scripts/
 
 ## Running
 
-1. Open the repository in Unity **6000.5.10f1**.
+1. Open the project in Unity **6000.5.10f1**.
 2. Open any scene or create a blank scene.
 3. Press Play.
 4. `MvpBootstrap` creates the game root and runtime UI automatically.
@@ -125,3 +136,18 @@ Assets/Scripts/
 ## Packages
 
 The project uses Unity UI (`com.unity.ugui`) plus built-in Input, UI and JSON serialization modules. IMGUI is not used.
+
+## Package fix
+
+- Removed invalid `com.unity.modules.input` dependency.
+- Unity legacy `Input` is provided by `UnityEngine.InputLegacyModule`; no UPM package named `com.unity.modules.input` exists.
+
+## MVP 0.3.2 — portrait viewport and desktop zoom
+
+- the entire game UI now lives inside a fixed **430 x 930 portrait phone viewport**
+- on desktop the phone viewport is centered with letterboxing instead of stretching to the monitor aspect ratio
+- the default scale always fits the complete phone screen inside the Game View/window
+- desktop zoom controls: `-`, `FIT`, `+`
+- desktop shortcuts: `Ctrl/Cmd + mouse wheel`, `Ctrl/Cmd + +/-`, `Ctrl/Cmd + 0` to reset to fit
+- resizing the Game View/window automatically recalculates the fit scale
+- on mobile the game requests portrait orientation and fits the logical phone viewport into the device safe area
