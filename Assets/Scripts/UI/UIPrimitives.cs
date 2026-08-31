@@ -128,19 +128,23 @@ namespace TrackDynasty.Mvp03.UI
         public static Transform ScrollContent(Transform parent, out ScrollRect scrollRect, int padding = 12)
         {
             GameObject scroll = CreateRect("ScrollView", parent);
-            ScrollRect sr = scroll.AddComponent<ScrollRect>();
-            Image bg = scroll.AddComponent<Image>();
-            bg.color = UITheme.Background;
             RectTransform scrollRt = Rect(scroll);
             Stretch(scrollRt, 0, 0, 0, 0);
+
+            ScrollRect sr = scroll.AddComponent<ScrollRect>();
+            sr.horizontal = false;
+            sr.vertical = true;
+            sr.movementType = ScrollRect.MovementType.Clamped;
+            sr.inertia = true;
+            sr.scrollSensitivity = 28f;
 
             GameObject viewport = CreateRect("Viewport", scroll.transform);
             RectTransform viewportRt = Rect(viewport);
             Stretch(viewportRt, 0, 0, 0, 0);
-            Image viewportImage = viewport.AddComponent<Image>();
-            viewportImage.color = new Color(1f, 1f, 1f, 0.001f);
-            Mask mask = viewport.AddComponent<Mask>();
-            mask.showMaskGraphic = false;
+            Image viewportGraphic = viewport.AddComponent<Image>();
+            viewportGraphic.color = new Color(1f, 1f, 1f, 0.002f);
+            viewportGraphic.raycastTarget = true;
+            viewport.AddComponent<RectMask2D>();
 
             GameObject content = CreateRect("Content", viewport.transform);
             RectTransform contentRt = Rect(content);
@@ -148,25 +152,43 @@ namespace TrackDynasty.Mvp03.UI
             contentRt.anchorMax = new Vector2(1f, 1f);
             contentRt.pivot = new Vector2(0.5f, 1f);
             contentRt.anchoredPosition = Vector2.zero;
-            contentRt.sizeDelta = Vector2.zero;
+            contentRt.offsetMin = new Vector2(0f, 0f);
+            contentRt.offsetMax = new Vector2(0f, 0f);
+            contentRt.sizeDelta = new Vector2(0f, 0f);
+
             VerticalLayoutGroup layout = content.AddComponent<VerticalLayoutGroup>();
             layout.spacing = 9f;
             layout.padding = new RectOffset(padding, padding, padding, padding);
+            layout.childAlignment = TextAnchor.UpperLeft;
             layout.childControlWidth = true;
             layout.childControlHeight = true;
             layout.childForceExpandWidth = true;
             layout.childForceExpandHeight = false;
+
             ContentSizeFitter fitter = content.AddComponent<ContentSizeFitter>();
+            fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
             fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
             sr.viewport = viewportRt;
             sr.content = contentRt;
-            sr.horizontal = false;
-            sr.vertical = true;
-            sr.movementType = ScrollRect.MovementType.Clamped;
-            sr.scrollSensitivity = 24f;
+            sr.verticalNormalizedPosition = 1f;
             scrollRect = sr;
             return content.transform;
+        }
+
+        public static void BuildScreenError(Transform parent, Exception ex)
+        {
+            Image bg = Panel(parent, UITheme.Background, "ScreenBuildError");
+            Stretch(bg.rectTransform, 0, 0, 0, 0);
+
+            Transform stack = Vertical(bg.transform, 10f, 18, "ErrorStack");
+            RectTransform rt = stack.GetComponent<RectTransform>();
+            Stretch(rt, 0, 0, 0, 0);
+
+            Text(stack, "SCREEN ERROR", 24, TextAnchor.MiddleLeft, UITheme.Red, FontStyle.Bold, 40f);
+            Text(stack, "The screen failed to build. This message is shown instead of a blank page so the runtime error is visible immediately.", 15, TextAnchor.MiddleLeft, UITheme.Text, FontStyle.Normal, 62f);
+            string message = ex == null ? "Unknown error" : ex.GetType().Name + ": " + ex.Message;
+            Text(stack, message, 13, TextAnchor.UpperLeft, UITheme.Gold, FontStyle.Normal, 130f);
         }
 
         public static Image FixedPanel(Transform parent, Color color, float height, string name = "Card")
@@ -189,7 +211,11 @@ namespace TrackDynasty.Mvp03.UI
         public static void Clear(Transform parent)
         {
             for (int i = parent.childCount - 1; i >= 0; i--)
-                UnityEngine.Object.Destroy(parent.GetChild(i).gameObject);
+            {
+                GameObject child = parent.GetChild(i).gameObject;
+                child.SetActive(false);
+                UnityEngine.Object.Destroy(child);
+            }
         }
 
         public static void SetFlexibleWidth(Component component, float value = 1f)
