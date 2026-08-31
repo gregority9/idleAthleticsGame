@@ -44,7 +44,17 @@ namespace TrackDynasty.Mvp03.UI
         protected void Rebuild()
         {
             UIFactory.Clear(Content);
-            Build();
+            try
+            {
+                Build();
+                Canvas.ForceUpdateCanvases();
+            }
+            catch (Exception ex)
+            {
+                Debug.LogException(ex);
+                UIFactory.Clear(Content);
+                UIFactory.BuildScreenError(Content, ex);
+            }
         }
 
         protected abstract void Build();
