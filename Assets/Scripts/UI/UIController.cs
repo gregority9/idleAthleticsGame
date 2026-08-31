@@ -79,24 +79,23 @@ namespace TrackDynasty.Mvp03.UI
         private Text _dateText;
         private Text _cashText;
         private Text _repText;
+        private Text _zoomText;
         private readonly Dictionary<ScreenId, GameScreen> _screens = new Dictionary<ScreenId, GameScreen>();
         private ScreenId _current;
         private float _zoomMultiplier = 1f;
-        private int _lastScreenWidth;
-        private int _lastScreenHeight;
-        private Rect _lastSafeArea;
 
         private const float PhoneWidth = 430f;
         private const float PhoneHeight = 930f;
-        private const float MinZoom = 0.45f;
-        private const float MaxZoom = 1.75f;
+        private const float MinZoom = 0.50f;
+        private const float MaxZoom = 1.50f;
+        private const float ZoomStep = 0.10f;
 
         public ScreenId Current => _current;
 
         public void Initialize(GameManager manager)
         {
             _manager = manager;
-            ConfigureMobileOrientation();
+            ConfigurePlatformDisplay();
             BuildCanvas();
             BuildChrome();
             BuildScreens();
@@ -113,109 +112,89 @@ namespace TrackDynasty.Mvp03.UI
             if (_manager != null) _manager.StateChanged -= OnStateChanged;
         }
 
-        private void Update()
+        private void ConfigurePlatformDisplay()
         {
-            HandleDesktopZoomInput();
-            UpdatePhoneViewport(false);
-        }
+            if (Application.isMobilePlatform)
+            {
+                Screen.autorotateToLandscapeLeft = false;
+                Screen.autorotateToLandscapeRight = false;
+                Screen.autorotateToPortrait = true;
+                Screen.autorotateToPortraitUpsideDown = false;
+                Screen.orientation = ScreenOrientation.Portrait;
+                return;
+            }
 
-        private void ConfigureMobileOrientation()
-        {
-            if (!Application.isMobilePlatform) return;
-            Screen.autorotateToLandscapeLeft = false;
-            Screen.autorotateToLandscapeRight = false;
-            Screen.autorotateToPortrait = true;
-            Screen.autorotateToPortraitUpsideDown = false;
-            Screen.orientation = ScreenOrientation.Portrait;
+#if !UNITY_EDITOR
+            Screen.fullScreenMode = FullScreenMode.Windowed;
+            Screen.SetResolution(516, 1116, false);
+#endif
         }
 
         private void BuildDesktopZoomControls()
         {
             if (Application.isMobilePlatform) return;
 
-            GameObject controls = UIFactory.CreateRect("DesktopZoomControls", _canvas.transform);
+            GameObject controls = UIFactory.CreateRect("DesktopPreviewControls", _canvas.transform);
             RectTransform rt = UIFactory.Rect(controls);
             rt.anchorMin = new Vector2(0f, 1f);
             rt.anchorMax = new Vector2(0f, 1f);
             rt.pivot = new Vector2(0f, 1f);
             rt.anchoredPosition = new Vector2(12f, -12f);
-            rt.sizeDelta = new Vector2(224f, 42f);
+            rt.sizeDelta = new Vector2(286f, 44f);
+
+            Image bg = controls.AddComponent<Image>();
+            bg.color = new Color(0.025f, 0.035f, 0.05f, 0.96f);
 
             HorizontalLayoutGroup layout = controls.AddComponent<HorizontalLayoutGroup>();
+            layout.padding = new RectOffset(6, 6, 5, 5);
             layout.spacing = 6f;
             layout.childControlWidth = true;
             layout.childControlHeight = true;
-            layout.childForceExpandWidth = true;
+            layout.childForceExpandWidth = false;
             layout.childForceExpandHeight = true;
 
-            UIFactory.Button(controls.transform, "-", () => SetZoom(_zoomMultiplier - 0.10f), UITheme.PanelAlt, 42f);
-            UIFactory.Button(controls.transform, "FIT", () => SetZoom(1f), UITheme.PanelAlt, 42f);
-            UIFactory.Button(controls.transform, "+", () => SetZoom(_zoomMultiplier + 0.10f), UITheme.PanelAlt, 42f);
-        }
+            Button minus = UIFactory.Button(controls.transform, "−", () => SetZoom(_zoomMultiplier - ZoomStep), UITheme.PanelAlt, 34f);
+            UIFactory.SetPreferredWidth(minus, 46f);
 
-        private void HandleDesktopZoomInput()
-        {
-            if (Application.isMobilePlatform) return;
+            Button fit = UIFactory.Button(controls.transform, "FIT", () => SetZoom(1f), UITheme.GreenDark, 34f);
+            UIFactory.SetPreferredWidth(fit, 58f);
 
-            bool modifier = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl) ||
-                            Input.GetKey(KeyCode.LeftCommand) || Input.GetKey(KeyCode.RightCommand);
-            if (!modifier) return;
+            Button plus = UIFactory.Button(controls.transform, "+", () => SetZoom(_zoomMultiplier + ZoomStep), UITheme.PanelAlt, 34f);
+            UIFactory.SetPreferredWidth(plus, 46f);
 
-            float wheel = Input.mouseScrollDelta.y;
-            if (Mathf.Abs(wheel) > 0.01f)
-                SetZoom(_zoomMultiplier + Mathf.Sign(wheel) * 0.08f);
-
-            if (Input.GetKeyDown(KeyCode.Equals) || Input.GetKeyDown(KeyCode.KeypadPlus))
-                SetZoom(_zoomMultiplier + 0.10f);
-            if (Input.GetKeyDown(KeyCode.Minus) || Input.GetKeyDown(KeyCode.KeypadMinus))
-                SetZoom(_zoomMultiplier - 0.10f);
-            if (Input.GetKeyDown(KeyCode.Alpha0) || Input.GetKeyDown(KeyCode.Keypad0))
-                SetZoom(1f);
+            _zoomText = UIFactory.Text(controls.transform, "100%", 13, TextAnchor.MiddleCenter, UITheme.Muted, FontStyle.Bold, 34f);
+            UIFactory.SetPreferredWidth(_zoomText, 64f);
         }
 
         private void SetZoom(float value)
         {
             _zoomMultiplier = Mathf.Clamp(value, MinZoom, MaxZoom);
-            UpdatePhoneViewport(true);
+            ApplyZoom();
         }
 
-        private void UpdatePhoneViewport(bool force)
+        private void ApplyZoom()
         {
-            if (_phoneRoot == null) return;
+            if (_phoneRoot != null)
+                _phoneRoot.localScale = new Vector3(_zoomMultiplier, _zoomMultiplier, 1f);
 
-            Rect safe = Application.isMobilePlatform ? Screen.safeArea : new Rect(0f, 0f, Screen.width, Screen.height);
-            bool changed = Screen.width != _lastScreenWidth || Screen.height != _lastScreenHeight || safe != _lastSafeArea;
-            if (!force && !changed) return;
-
-            _lastScreenWidth = Screen.width;
-            _lastScreenHeight = Screen.height;
-            _lastSafeArea = safe;
-
-            float availableWidth = Mathf.Max(1f, safe.width - (Application.isMobilePlatform ? 0f : 24f));
-            float availableHeight = Mathf.Max(1f, safe.height - (Application.isMobilePlatform ? 0f : 24f));
-            float fitScale = Mathf.Min(availableWidth / PhoneWidth, availableHeight / PhoneHeight);
-            float finalScale = Mathf.Max(0.01f, fitScale * _zoomMultiplier);
-            _phoneRoot.localScale = new Vector3(finalScale, finalScale, 1f);
-
-            Vector2 screenCenter = new Vector2(Screen.width * 0.5f, Screen.height * 0.5f);
-            _phoneRoot.anchoredPosition = safe.center - screenCenter;
+            if (_zoomText != null)
+                _zoomText.text = Mathf.RoundToInt(_zoomMultiplier * 100f) + "%";
         }
 
         private void BuildCanvas()
         {
-            GameObject canvasGo = new GameObject("MVP032_Canvas", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
+            GameObject canvasGo = new GameObject("MVP033_Canvas", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
             canvasGo.transform.SetParent(transform, false);
             _canvas = canvasGo.GetComponent<Canvas>();
             _canvas.renderMode = RenderMode.ScreenSpaceOverlay;
 
-            // The canvas itself uses screen pixels. The actual game lives inside a fixed
-            // 430 x 930 portrait phone viewport which we scale to fit the available screen.
-            // This avoids ScaleWithScreenSize enlarging a portrait UI on wide desktop windows.
             CanvasScaler scaler = canvasGo.GetComponent<CanvasScaler>();
-            scaler.uiScaleMode = CanvasScaler.ScaleMode.ConstantPixelSize;
-            scaler.scaleFactor = 1f;
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(PhoneWidth, PhoneHeight);
+            scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.Expand;
+            scaler.referencePixelsPerUnit = 100f;
 
-            Image desktopBg = UIFactory.Panel(canvasGo.transform, new Color(0.015f, 0.02f, 0.03f, 1f), "DesktopLetterbox");
+            Image desktopBg = UIFactory.Panel(canvasGo.transform, new Color(0.012f, 0.017f, 0.026f, 1f), "DesktopLetterbox");
             UIFactory.Stretch(desktopBg.rectTransform, 0, 0, 0, 0);
             desktopBg.transform.SetAsFirstSibling();
 
@@ -224,15 +203,19 @@ namespace TrackDynasty.Mvp03.UI
             _phoneRoot.anchorMin = new Vector2(0.5f, 0.5f);
             _phoneRoot.anchorMax = new Vector2(0.5f, 0.5f);
             _phoneRoot.pivot = new Vector2(0.5f, 0.5f);
+            _phoneRoot.anchoredPosition = Vector2.zero;
             _phoneRoot.sizeDelta = new Vector2(PhoneWidth, PhoneHeight);
+
             Image phoneBg = phoneGo.AddComponent<Image>();
             phoneBg.color = UITheme.Background;
+            RectMask2D clip = phoneGo.AddComponent<RectMask2D>();
+            clip.padding = Vector4.zero;
             Outline phoneOutline = phoneGo.AddComponent<Outline>();
-            phoneOutline.effectColor = new Color(1f, 1f, 1f, 0.10f);
+            phoneOutline.effectColor = new Color(1f, 1f, 1f, 0.12f);
             phoneOutline.effectDistance = new Vector2(1f, -1f);
 
             BuildDesktopZoomControls();
-            UpdatePhoneViewport(true);
+            ApplyZoom();
 
             if (FindFirstObjectByType<EventSystem>() == null)
             {
