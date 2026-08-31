@@ -19,6 +19,17 @@ namespace TrackDynasty.Mvp03.Systems
         {
             if (athlete == null) return;
             if (athlete.CompetitionOffers == null) athlete.CompetitionOffers = new List<CompetitionOffer>();
+
+            if (athlete.CompetitionBreakUntil != null)
+            {
+                if (currentDate.CompareTo(athlete.CompetitionBreakUntil) < 0)
+                {
+                    athlete.CompetitionOffers.Clear();
+                    return;
+                }
+                athlete.CompetitionBreakUntil = null;
+            }
+
             if (athlete.ScheduledCompetition != null || athlete.CompetitionOffers.Count > 0) return;
             athlete.CompetitionOffers = GenerateOffers(athlete, currentDate, reputation);
         }
