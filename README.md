@@ -1,4 +1,4 @@
-# Track Dynasty — MVP 0.3.3
+# Track Dynasty — MVP 0.3.5
 
 Target Unity Editor: **6000.5.10f1**
 
@@ -43,20 +43,83 @@ Mobile-first athletics manager prototype.
 - full 1–8 results table: place, lane, country, athlete, time and gap
 - PB / CR / WR badges
 
-## MVP 0.3.3 phone viewport fix
+## Phone viewport
 
-The game is now built around a fixed logical **430 × 930 portrait phone viewport**.
+The game is built around a fixed logical **430 × 930 portrait phone viewport**.
 
 - Unity `CanvasScaler` uses `Scale With Screen Size`
-- `Screen Match Mode` is `Expand`, so the whole phone reference area fits instead of being cropped on wide desktop windows
-- on PC the phone is centered with dark letterboxing around it
-- desktop preview controls are outside the phone viewport: `−`, `FIT`, `+`, plus the current zoom percentage
+- `Screen Match Mode` is `Expand`
+- on PC the phone is centered with dark letterboxing
+- desktop preview controls: `−`, `FIT`, `+`, plus current zoom percentage
 - manual zoom range is **50%–150%**
-- `FIT` returns to the correctly fitted phone scale
-- desktop standalone builds request a **516 × 1116 windowed** phone-shaped window
+- desktop standalone requests a **516 × 1116 windowed** phone-shaped window
 - mobile builds request portrait orientation
 - long game screens use internal scroll views
-- the zoom system no longer polls `UnityEngine.Input` directly
+
+## Runtime UI safeguards
+
+- shared ScrollRect hierarchy uses `RectMask2D`
+- stale screen children are disabled before deferred destruction so they cannot intercept clicks
+- screen construction is guarded: runtime UI exceptions display a visible `SCREEN ERROR` panel instead of a blank area
+
+## MVP 0.3.5 — athlete management, training load and recovery
+
+### Starter athlete migration
+
+- Andre Campbell is guaranteed to exist for pre-0.3.5 saves unless he already retired into the Hall of Fame.
+- invalid/missing selected-athlete IDs are repaired automatically.
+- Andre is explicitly selected after the initial scout choice and receives competition offers.
+
+### Fatigue and training load
+
+Fatigue is stored as `0.0–1.0` and displayed as `0–100%`.
+
+- 0–20%: Fresh
+- 20–50%: Normal load
+- 50–70%: Tired
+- 70–85%: Very tired
+- 85–100%: Overloaded
+
+Training separates:
+
+- focus: Sprint / Strength / Technique
+- load: Rest / Light / Normal / Hard
+
+The athlete screen shows:
+
+- current fatigue status
+- estimated race effectiveness
+- recommended training load
+- estimated daily fatigue change
+
+Fatigue now has progressive penalties to both training efficiency and race performance instead of one simple linear modifier.
+
+### Recovery
+
+- Rest load: about -5.5 percentage points fatigue/day
+- Physio: $250, -12 pp fatigue, 7-day cooldown
+- Focused camp: 7 days, $1500, boosted training in the current focus
+- Recovery camp: 5 days, $900, roughly -40 pp fatigue
+
+Camps are blocked when any club athlete has a scheduled competition during the camp window.
+
+### Competition breaks
+
+Each athlete can deliberately pause racing for:
+
+- 14 days
+- 30 days
+- 60 days
+
+A scheduled competition can be cancelled into a 14-day break. During a break the athlete keeps training but receives no race offers. Competitions can be resumed early.
+
+### Calendar controls
+
+HQ includes:
+
+- Advance Day
+- Advance 7D
+- Next Event
 
 ## Saving
 
