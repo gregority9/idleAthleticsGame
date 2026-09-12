@@ -64,7 +64,7 @@ namespace TrackDynasty.Mvp03.Systems
         {
             float rating = athlete.BaseRating;
             float form = Mathf.Lerp(0.95f, 1.05f, Mathf.InverseLerp(0.78f, 1.08f, athlete.Form));
-            float fatigue = 1f - athlete.Fatigue * 0.10f;
+            float fatigue = TrainingSystem.RacePerformanceMultiplier(athlete.Fatigue);
             rating *= form * fatigue;
 
             float variance = athlete.HasTrait(TraitType.Consistent) ? 0.025f : athlete.HasTrait(TraitType.Volatile) ? 0.085f : 0.045f;

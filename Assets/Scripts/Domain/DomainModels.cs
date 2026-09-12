@@ -5,6 +5,8 @@ using UnityEngine;
 namespace TrackDynasty.Mvp03.Domain
 {
     public enum TrainingFocus { Sprint, Strength, Technique, Recovery }
+    public enum TrainingIntensity { Normal = 0, Light = 1, Hard = 2, Rest = 3 }
+    public enum CampType { FocusedTraining, Recovery }
     public enum CompetitionTier { Local, Regional, National, International, Elite }
     public enum RaceStrategy { ExplosiveStart, Balanced, LatePush }
     public enum TraitType
@@ -119,7 +121,7 @@ namespace TrackDynasty.Mvp03.Domain
     [Serializable]
     public class GameState
     {
-        public int SaveVersion = 3;
+        public int SaveVersion = 5;
         public GameDate CurrentDate = new GameDate(2027, 1, 1);
         public int Cash = 6200;
         public int Reputation = 120;
@@ -206,6 +208,9 @@ namespace TrackDynasty.Mvp03.Domain
         public int Championships;
         public int YearsCompleted;
         public TrainingFocus TrainingFocus = TrainingFocus.Sprint;
+        public TrainingIntensity TrainingIntensity = TrainingIntensity.Normal;
+        public GameDate CompetitionBreakUntil;
+        public GameDate LastPhysioDate;
 
         public CompetitionOffer ScheduledCompetition;
         public List<CompetitionOffer> CompetitionOffers = new List<CompetitionOffer>();

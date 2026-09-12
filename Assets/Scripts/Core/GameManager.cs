@@ -76,14 +76,46 @@ namespace TrackDynasty.Mvp03.Core
             if (State.StartingScoutChoices == null || State.StartingScoutChoices.Count == 0)
                 State.StartingScoutChoices = ScoutSystem.CreateStartingChoices();
 
+            State.Roster.RemoveAll(a => a == null);
+
+            // MVP 0.3.5 migration: some early 0.3 saves could reach the main UI without
+            // a usable starter athlete. Restore Andre exactly once for pre-0.3.5 saves.
+            if (State.SaveVersion < 5)
+            {
+                bool hasStarter = State.Roster.Exists(a => a.Id == "andre-campbell");
+                bool starterRetired = State.HallOfFame.Exists(h => h != null && h.Name == "Andre Campbell");
+                if (!hasStarter && !starterRetired)
+                    State.Roster.Insert(0, AthleteGenerator.CreateStarterAthlete());
+                State.SaveVersion = 5;
+            }
+
+            if (State.Roster.Count == 0)
+                State.Roster.Add(AthleteGenerator.CreateStarterAthlete());
+
             for (int i = 0; i < State.Roster.Count; i++)
             {
                 Athlete athlete = State.Roster[i];
+                if (string.IsNullOrEmpty(athlete.Id)) athlete.Id = Guid.NewGuid().ToString("N");
                 if (athlete.CompetitionOffers == null) athlete.CompetitionOffers = new List<CompetitionOffer>();
                 if (athlete.Traits == null) athlete.Traits = new List<TraitType>();
                 if (athlete.RaceHistory == null) athlete.RaceHistory = new List<RaceHistoryEntry>();
                 if (athlete.SeasonHistory == null) athlete.SeasonHistory = new List<SeasonHistoryEntry>();
+
+                // Recovery used to be a focus. In 0.3.5 recovery is controlled by load/actions.
+                if (athlete.TrainingFocus == TrainingFocus.Recovery)
+                {
+                    athlete.TrainingFocus = TrainingFocus.Sprint;
+                    athlete.TrainingIntensity = TrainingIntensity.Rest;
+                }
+
                 CompetitionSystem.EnsureOffers(athlete, State.CurrentDate, State.Reputation);
+            }
+
+            Athlete selected = State.Roster.Find(a => a.Id == State.SelectedAthleteId);
+            if (selected == null)
+            {
+                Athlete starter = State.Roster.Find(a => a.Id == "andre-campbell");
+                State.SelectedAthleteId = (starter ?? State.Roster[0]).Id;
             }
         }
 
@@ -92,6 +124,17 @@ namespace TrackDynasty.Mvp03.Core
             if (scout == null) return;
             State.ChosenScout = scout;
             State.StartingScoutChoices.Clear();
+
+            Athlete starter = State.Roster.Find(a => a != null && a.Id == "andre-campbell");
+            if (starter == null)
+            {
+                starter = AthleteGenerator.CreateStarterAthlete();
+                State.Roster.Insert(0, starter);
+            }
+            State.SelectedAthleteId = starter.Id;
+            ActiveAthlete = starter;
+            CompetitionSystem.EnsureOffers(starter, State.CurrentDate, State.Reputation);
+
             RefreshScouting(true);
             SaveAndNotify();
         }
@@ -115,17 +158,115 @@ namespace TrackDynasty.Mvp03.Core
         public void SetTraining(Athlete athlete, TrainingFocus focus)
         {
             if (athlete == null) return;
+            if (focus == TrainingFocus.Recovery)
+            {
+                athlete.TrainingIntensity = TrainingIntensity.Rest;
+                focus = TrainingFocus.Sprint;
+            }
             athlete.TrainingFocus = focus;
+            SaveAndNotify();
+        }
+
+        public void SetTrainingIntensity(Athlete athlete, TrainingIntensity intensity)
+        {
+            if (athlete == null) return;
+            athlete.TrainingIntensity = intensity;
             SaveAndNotify();
         }
 
         public bool ScheduleCompetition(Athlete athlete, CompetitionOffer offer)
         {
             if (athlete == null || offer == null) return false;
+            if (IsOnCompetitionBreak(athlete)) return false;
             if (!CompetitionSystem.CanEnter(athlete, offer)) return false;
             if (offer.Date == null || offer.Date.CompareTo(State.CurrentDate) <= 0) return false;
             athlete.ScheduledCompetition = offer;
             athlete.CompetitionOffers.Clear();
+            SaveAndNotify();
+            return true;
+        }
+
+        public bool IsOnCompetitionBreak(Athlete athlete)
+        {
+            return athlete != null && athlete.CompetitionBreakUntil != null &&
+                   State.CurrentDate.CompareTo(athlete.CompetitionBreakUntil) < 0;
+        }
+
+        public void TakeCompetitionBreak(Athlete athlete, int days)
+        {
+            if (athlete == null) return;
+            days = Mathf.Clamp(days, 7, 90);
+            athlete.ScheduledCompetition = null;
+            athlete.CompetitionOffers.Clear();
+            athlete.CompetitionBreakUntil = State.CurrentDate.AddDays(days);
+            SaveAndNotify();
+        }
+
+        public void ResumeCompetitions(Athlete athlete)
+        {
+            if (athlete == null) return;
+            athlete.CompetitionBreakUntil = null;
+            athlete.ScheduledCompetition = null;
+            athlete.CompetitionOffers.Clear();
+            CompetitionSystem.EnsureOffers(athlete, State.CurrentDate, State.Reputation);
+            SaveAndNotify();
+        }
+
+        public bool CanUsePhysio(Athlete athlete)
+        {
+            if (athlete == null) return false;
+            if (athlete.LastPhysioDate == null) return true;
+            return (State.CurrentDate.ToDateTime() - athlete.LastPhysioDate.ToDateTime()).TotalDays >= 7;
+        }
+
+        public int PhysioCooldownDays(Athlete athlete)
+        {
+            if (athlete == null || athlete.LastPhysioDate == null) return 0;
+            int elapsed = Mathf.Max(0, (int)(State.CurrentDate.ToDateTime() - athlete.LastPhysioDate.ToDateTime()).TotalDays);
+            return Mathf.Max(0, 7 - elapsed);
+        }
+
+        public bool UsePhysio(Athlete athlete)
+        {
+            const int cost = 250;
+            if (athlete == null || State.Cash < cost || !CanUsePhysio(athlete)) return false;
+            State.Cash -= cost;
+            TrainingSystem.ApplyPhysio(athlete);
+            athlete.LastPhysioDate = new GameDate(State.CurrentDate.Year, State.CurrentDate.Month, State.CurrentDate.Day);
+            SaveAndNotify();
+            return true;
+        }
+
+        public bool CanStartCamp(Athlete athlete, CampType camp, out string reason)
+        {
+            reason = "";
+            if (athlete == null) { reason = "No athlete selected."; return false; }
+
+            int days = camp == CampType.Recovery ? 5 : 7;
+            int cost = camp == CampType.Recovery ? 900 : 1500;
+            if (State.Cash < cost) { reason = "Not enough cash."; return false; }
+
+            GameDate end = State.CurrentDate.AddDays(days);
+            for (int i = 0; i < State.Roster.Count; i++)
+            {
+                CompetitionOffer scheduled = State.Roster[i].ScheduledCompetition;
+                if (scheduled == null || scheduled.Date == null) continue;
+                if (scheduled.Date.CompareTo(State.CurrentDate) >= 0 && scheduled.Date.CompareTo(end) <= 0)
+                {
+                    reason = "A club athlete has a race during the camp window.";
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        public bool StartCamp(Athlete athlete, CampType camp)
+        {
+            if (!CanStartCamp(athlete, camp, out _)) return false;
+
+            int days = camp == CampType.Recovery ? 5 : 7;
+            State.Cash -= camp == CampType.Recovery ? 900 : 1500;
+            AdvanceDaysInternal(days, athlete, camp);
             SaveAndNotify();
             return true;
         }
@@ -151,6 +292,18 @@ namespace TrackDynasty.Mvp03.Core
         {
             if (!CanAdvanceDate()) return;
             AdvanceDaysInternal(1);
+            SaveAndNotify();
+        }
+
+        public void AdvanceSevenDays()
+        {
+            if (!CanAdvanceDate()) return;
+            int advanced = 0;
+            while (advanced < 7 && CanAdvanceDate())
+            {
+                AdvanceDaysInternal(1);
+                advanced++;
+            }
             SaveAndNotify();
         }
 
@@ -188,13 +341,26 @@ namespace TrackDynasty.Mvp03.Core
             return best;
         }
 
-        private void AdvanceDaysInternal(int days)
+        private void AdvanceDaysInternal(int days, Athlete campAthlete = null, CampType? camp = null)
         {
             for (int d = 0; d < days; d++)
             {
                 DateTime before = State.CurrentDate.ToDateTime();
                 for (int i = 0; i < State.Roster.Count; i++)
-                    TrainingSystem.ApplyTrainingDay(State.Roster[i]);
+                {
+                    Athlete athlete = State.Roster[i];
+                    if (campAthlete != null && athlete.Id == campAthlete.Id && camp.HasValue)
+                    {
+                        if (camp.Value == CampType.Recovery)
+                            TrainingSystem.ApplyRecoveryCampDay(athlete);
+                        else
+                            TrainingSystem.ApplyFocusedCampDay(athlete);
+                    }
+                    else
+                    {
+                        TrainingSystem.ApplyTrainingDay(athlete);
+                    }
+                }
 
                 State.CurrentDate = State.CurrentDate.AddDays(1);
                 DateTime after = State.CurrentDate.ToDateTime();
@@ -205,6 +371,9 @@ namespace TrackDynasty.Mvp03.Core
                     ApplyYearRollover(before.Year);
 
                 ApplicationSystem.RemoveExpired(State);
+
+                for (int i = 0; i < State.Roster.Count; i++)
+                    CompetitionSystem.EnsureOffers(State.Roster[i], State.CurrentDate, State.Reputation);
             }
         }
 

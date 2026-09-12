@@ -84,6 +84,7 @@ namespace TrackDynasty.Mvp03.UI.Screens
                 UIFactory.Text(stack, "No competition today. Train or move the calendar forward.", 15, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Normal, 38f);
                 Transform row = UIFactory.Horizontal(stack, 8f, 46f);
                 UIFactory.Button(row, "ADVANCE DAY", Manager.AdvanceOneDay, UITheme.PanelAlt, 46f);
+                UIFactory.Button(row, "ADVANCE 7D", Manager.AdvanceSevenDays, UITheme.PanelAlt, 46f);
                 UIFactory.Button(row, "NEXT EVENT", Manager.AdvanceToNextCompetition, UITheme.Green, 46f);
             }
 
@@ -95,7 +96,7 @@ namespace TrackDynasty.Mvp03.UI.Screens
                 Transform inner = UIFactory.Vertical(athleteCard.transform, 3f, 12, "Inner");
                 UIFactory.Stretch(inner.GetComponent<RectTransform>(), 0, 0, 0, 0);
                 UIFactory.Text(inner, selected.DisplayName + " · " + selected.CountryCode, 20, TextAnchor.MiddleLeft, UITheme.Text, FontStyle.Bold, 28f);
-                UIFactory.Text(inner, "PB " + selected.PersonalBest.ToString("0.00") + "s · OVR " + selected.Overall + " · Potential " + selected.PotentialMin + "–" + selected.PotentialMax, 14, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Normal, 24f);
+                UIFactory.Text(inner, "PB " + selected.PersonalBest.ToString("0.00") + "s · OVR " + selected.Overall + " · Fatigue " + Mathf.RoundToInt(selected.Fatigue * 100f) + "% · " + TrainingSystem.IntensityLabel(selected.TrainingIntensity), 14, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Normal, 24f);
                 string next = selected.ScheduledCompetition == null ? "No event scheduled" : selected.ScheduledCompetition.Date.ShortLabel + " · " + selected.ScheduledCompetition.Name;
                 UIFactory.Text(inner, next, 14, TextAnchor.MiddleLeft, UITheme.Gold, FontStyle.Bold, 22f);
                 UIFactory.Button(inner, "OPEN ATHLETE", () => Controller.OpenAthlete(selected), UITheme.PanelAlt, 34f);
@@ -155,8 +156,8 @@ namespace TrackDynasty.Mvp03.UI.Screens
                 UIFactory.SetFlexibleWidth(name);
                 Text ovr = UIFactory.Text(row, "OVR " + athlete.Overall, 15, TextAnchor.MiddleRight, UITheme.Green, FontStyle.Bold, 36f);
                 UIFactory.SetPreferredWidth(ovr, 70f);
-                UIFactory.Text(inner, "Age " + athlete.Age + " · PB " + athlete.PersonalBest.ToString("0.00") + "s · Potential " + athlete.PotentialMin + "–" + athlete.PotentialMax, 14, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Normal, 24f);
-                string scheduled = athlete.ScheduledCompetition == null ? "Needs next competition" : athlete.ScheduledCompetition.Date.ShortLabel + " · " + athlete.ScheduledCompetition.Name;
+                UIFactory.Text(inner, "Age " + athlete.Age + " · PB " + athlete.PersonalBest.ToString("0.00") + "s · Fatigue " + Mathf.RoundToInt(athlete.Fatigue * 100f) + "% · Load " + TrainingSystem.IntensityLabel(athlete.TrainingIntensity), 14, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Normal, 24f);
+                string scheduled = Manager.IsOnCompetitionBreak(athlete) ? "No races until " + athlete.CompetitionBreakUntil.ShortLabel : athlete.ScheduledCompetition == null ? "Needs next competition" : athlete.ScheduledCompetition.Date.ShortLabel + " · " + athlete.ScheduledCompetition.Name;
                 UIFactory.Text(inner, scheduled, 13, TextAnchor.MiddleLeft, athlete.ScheduledCompetition == null ? UITheme.Gold : UITheme.Text, FontStyle.Bold, 22f);
                 UIFactory.Button(inner, "MANAGE " + athlete.FirstName.ToUpperInvariant(), () => Controller.OpenAthlete(athlete), UITheme.PanelAlt, 34f);
             }

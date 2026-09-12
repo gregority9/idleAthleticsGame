@@ -52,18 +52,72 @@ namespace TrackDynasty.Mvp03.UI.Screens
             string traits = athlete.Traits == null || athlete.Traits.Count == 0 ? "No special traits" : string.Join(" · ", athlete.Traits.ConvertAll(t => TraitLabel(t)).ToArray());
             UIFactory.Text(stack, traits, 14, TextAnchor.MiddleLeft, UITheme.Text, FontStyle.Normal, 40f);
 
-            UIFactory.Text(stack, "TRAINING FOCUS", 15, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Bold, 24f);
+            UIFactory.Text(stack, "TRAINING", 15, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Bold, 24f);
+            UIFactory.Text(stack,
+                "Fatigue " + Mathf.RoundToInt(athlete.Fatigue * 100f) + "% · " + TrainingSystem.FatigueLabel(athlete.Fatigue) +
+                " · race effectiveness " + Mathf.RoundToInt(TrainingSystem.RacePerformanceMultiplier(athlete.Fatigue) * 100f) + "%",
+                13, TextAnchor.MiddleLeft, athlete.Fatigue >= 0.70f ? UITheme.Red : UITheme.Muted, FontStyle.Bold, 28f);
+
+            int daysToRace = athlete.ScheduledCompetition != null ? DaysUntil(athlete.ScheduledCompetition.Date) : -1;
+            TrainingIntensity recommended = TrainingSystem.RecommendedIntensity(athlete, daysToRace);
+            float dailyDelta = TrainingSystem.EstimatedDailyFatigueDelta(athlete, athlete.TrainingIntensity) * 100f;
+            UIFactory.Text(stack,
+                "Current load: " + TrainingSystem.IntensityLabel(athlete.TrainingIntensity) +
+                " · recommended: " + TrainingSystem.IntensityLabel(recommended) +
+                " · est. fatigue/day " + (dailyDelta >= 0f ? "+" : "") + dailyDelta.ToString("0.0") + " pp",
+                13, TextAnchor.MiddleLeft, UITheme.Green, FontStyle.Bold, 30f);
+
+            UIFactory.Text(stack, "FOCUS", 12, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Bold, 20f);
             Transform training = UIFactory.Horizontal(stack, 6f, 42f);
             AddTrainingButton(training, athlete, TrainingFocus.Sprint);
             AddTrainingButton(training, athlete, TrainingFocus.Strength);
             AddTrainingButton(training, athlete, TrainingFocus.Technique);
-            AddTrainingButton(training, athlete, TrainingFocus.Recovery);
+
+            UIFactory.Text(stack, "LOAD", 12, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Bold, 20f);
+            Transform intensity = UIFactory.Horizontal(stack, 6f, 42f);
+            AddIntensityButton(intensity, athlete, TrainingIntensity.Rest);
+            AddIntensityButton(intensity, athlete, TrainingIntensity.Light);
+            AddIntensityButton(intensity, athlete, TrainingIntensity.Normal);
+            AddIntensityButton(intensity, athlete, TrainingIntensity.Hard);
+
+            UIFactory.Text(stack, "RECOVERY & CAMPS", 15, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Bold, 24f);
+            UIFactory.Text(stack, "Physio: -12 pp fatigue, 7-day cooldown. Focused camp: 7 days of boosted current-focus training. Recovery camp: 5 days, about -40 pp fatigue.", 12, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Normal, 42f);
+            Transform recoveryRow = UIFactory.Horizontal(stack, 6f, 42f);
+            bool canPhysio = Manager.CanUsePhysio(athlete) && Manager.State.Cash >= 250;
+            Button physio = UIFactory.Button(recoveryRow,
+                canPhysio ? "PHYSIO $250" : "PHYSIO " + Manager.PhysioCooldownDays(athlete) + "D",
+                () => Manager.UsePhysio(athlete), canPhysio ? UITheme.GreenDark : UITheme.PanelAlt, 42f, canPhysio);
+            UIFactory.SetFlexibleWidth(physio);
+
+            string focusedReason;
+            bool canFocusedCamp = Manager.CanStartCamp(athlete, CampType.FocusedTraining, out focusedReason);
+            Button focusedCamp = UIFactory.Button(recoveryRow, "FOCUSED CAMP 7D · $1500",
+                () => Manager.StartCamp(athlete, CampType.FocusedTraining),
+                canFocusedCamp ? UITheme.PanelAlt : UITheme.Panel, 42f, canFocusedCamp);
+            UIFactory.SetFlexibleWidth(focusedCamp);
+
+            string recoveryReason;
+            bool canRecoveryCamp = Manager.CanStartCamp(athlete, CampType.Recovery, out recoveryReason);
+            Button recoveryCamp = UIFactory.Button(stack, "RECOVERY CAMP 5D · $900",
+                () => Manager.StartCamp(athlete, CampType.Recovery),
+                canRecoveryCamp ? UITheme.GreenDark : UITheme.PanelAlt, 42f, canRecoveryCamp);
+            if (!canFocusedCamp || !canRecoveryCamp)
+                UIFactory.Text(stack, !canFocusedCamp ? focusedReason : recoveryReason, 12, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Normal, 22f);
 
             UIFactory.Text(stack, "COMPETITION PLAN", 15, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Bold, 24f);
-            if (athlete.ScheduledCompetition != null)
+            if (Manager.IsOnCompetitionBreak(athlete))
+            {
+                Image breakCard = UIFactory.FixedPanel(stack, UITheme.GreenDark, 96f, "CompetitionBreak");
+                Transform inner = UIFactory.Vertical(breakCard.transform, 3f, 10, "BreakInner");
+                UIFactory.Stretch(inner.GetComponent<RectTransform>(), 0, 0, 0, 0);
+                UIFactory.Text(inner, "NO RACES UNTIL " + athlete.CompetitionBreakUntil.ShortLabel, 16, TextAnchor.MiddleLeft, UITheme.Green, FontStyle.Bold, 28f);
+                UIFactory.Text(inner, "The athlete keeps training but receives no competition offers.", 13, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Normal, 22f);
+                UIFactory.Button(inner, "RESUME COMPETITIONS", () => Manager.ResumeCompetitions(athlete), UITheme.PanelAlt, 34f);
+            }
+            else if (athlete.ScheduledCompetition != null)
             {
                 CompetitionOffer scheduled = athlete.ScheduledCompetition;
-                Image card = UIFactory.FixedPanel(stack, UITheme.Panel, 106f, "ScheduledCard");
+                Image card = UIFactory.FixedPanel(stack, UITheme.Panel, 142f, "ScheduledCard");
                 Transform inner = UIFactory.Vertical(card.transform, 3f, 10, "Inner");
                 UIFactory.Stretch(inner.GetComponent<RectTransform>(), 0, 0, 0, 0);
                 UIFactory.Text(inner, scheduled.Date.LongLabel + " · " + scheduled.Name, 16, TextAnchor.MiddleLeft, UITheme.Text, FontStyle.Bold, 28f);
@@ -72,10 +126,11 @@ namespace TrackDynasty.Mvp03.UI.Screens
                     UIFactory.Button(inner, "ENTER RACE", () => Controller.OpenRacePrep(athlete), UITheme.Gold, 38f);
                 else
                     UIFactory.Text(inner, "Scheduled in " + DaysUntil(scheduled.Date) + " day(s)", 13, TextAnchor.MiddleLeft, UITheme.Green, FontStyle.Bold, 22f);
+                UIFactory.Button(inner, "CANCEL & TAKE 14D BREAK", () => Manager.TakeCompetitionBreak(athlete, 14), UITheme.PanelAlt, 32f);
             }
             else
             {
-                UIFactory.Text(stack, "Choose where this athlete should race next:", 14, TextAnchor.MiddleLeft, UITheme.Text, FontStyle.Normal, 26f);
+                UIFactory.Text(stack, "Choose where this athlete should race next, or deliberately skip racing for a while:", 14, TextAnchor.MiddleLeft, UITheme.Text, FontStyle.Normal, 42f);
                 for (int i = 0; i < athlete.CompetitionOffers.Count; i++)
                 {
                     CompetitionOffer offer = athlete.CompetitionOffers[i];
@@ -88,6 +143,11 @@ namespace TrackDynasty.Mvp03.UI.Screens
                     UIFactory.Text(inner, CompetitionSystem.QualificationText(offer.Tier) + " · Reward up to $" + offer.CashReward, 13, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Normal, 22f);
                     UIFactory.Button(inner, canEnter ? "SCHEDULE" : "NOT QUALIFIED", () => Manager.ScheduleCompetition(athlete, offer), canEnter ? UITheme.Green : UITheme.PanelAlt, 34f, canEnter);
                 }
+
+                Transform breakRow = UIFactory.Horizontal(stack, 6f, 40f);
+                UIFactory.Button(breakRow, "NO RACES 14D", () => Manager.TakeCompetitionBreak(athlete, 14), UITheme.PanelAlt, 40f);
+                UIFactory.Button(breakRow, "30D", () => Manager.TakeCompetitionBreak(athlete, 30), UITheme.PanelAlt, 40f);
+                UIFactory.Button(breakRow, "60D", () => Manager.TakeCompetitionBreak(athlete, 60), UITheme.PanelAlt, 40f);
             }
 
             UIFactory.Text(stack, "CAREER", 15, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Bold, 24f);
@@ -128,12 +188,20 @@ namespace TrackDynasty.Mvp03.UI.Screens
             UIFactory.SetFlexibleWidth(b);
         }
 
+        private void AddIntensityButton(Transform parent, Athlete athlete, TrainingIntensity intensity)
+        {
+            bool active = athlete.TrainingIntensity == intensity;
+            Button b = UIFactory.Button(parent, TrainingSystem.IntensityLabel(intensity),
+                () => Manager.SetTrainingIntensity(athlete, intensity),
+                active ? UITheme.Green : UITheme.PanelAlt, 42f);
+            UIFactory.SetFlexibleWidth(b);
+        }
+
         private string ShortTraining(TrainingFocus focus)
         {
             if (focus == TrainingFocus.Sprint) return "SPRINT";
             if (focus == TrainingFocus.Strength) return "STR";
-            if (focus == TrainingFocus.Technique) return "TECH";
-            return "REC";
+            return "TECH";
         }
 
         private int DaysUntil(GameDate date)
