@@ -256,7 +256,7 @@ namespace TrackDynasty.Mvp03.Core
             if (result.NewPersonalBest) record.PersonalBest = result.PlayerTime;
             if (result.NewClubRecord) State.SetClubRecord(result.Distance, result.PlayerTime, athlete.DisplayName);
 
-            athlete.Fatigue = Mathf.Clamp01(athlete.Fatigue + (result.Distance >= DistanceType.M800 ? 0.16f : 0.10f));
+            athlete.Fatigue = Mathf.Clamp01(athlete.Fatigue + ((int)result.Distance >= 800 ? 0.16f : 0.10f));
             athlete.Form = Mathf.Clamp(athlete.Form + UnityEngine.Random.Range(-0.012f, 0.016f), 0.78f, 1.08f);
             athlete.SponsorInterest += result.SponsorInterestGain;
             State.Cash += result.CashReward;
