@@ -42,7 +42,7 @@ namespace TrackDynasty.Mvp03.Systems
             result.NewPersonalBest = !record.HasPersonalBest || player.FinishTime < record.PersonalBest;
             result.NewClubRecord = previousClub <= 0f || player.FinishTime < previousClub;
 
-            float photoWindow = distance <= DistanceType.M200 ? 0.03f : distance == DistanceType.M400 ? 0.06f : distance == DistanceType.M800 ? 0.12f : 0.20f;
+            float photoWindow = (int)distance <= 200 ? 0.03f : (int)distance == 400 ? 0.06f : (int)distance == 800 ? 0.12f : 0.20f;
             if (result.Standings.Count >= 2)
                 result.PhotoFinish = Mathf.Abs(result.Standings[0].FinishTime - result.Standings[1].FinishTime) <= photoWindow;
 
@@ -68,11 +68,11 @@ namespace TrackDynasty.Mvp03.Systems
 
             if (strategy == RaceStrategy.FastStart)
             {
-                rating += distance <= DistanceType.M400 ? (athlete.Acceleration - athlete.Endurance) * 0.018f : (athlete.Acceleration - athlete.Endurance) * 0.008f;
+                rating += (int)distance <= 400 ? (athlete.Acceleration - athlete.Endurance) * 0.018f : (athlete.Acceleration - athlete.Endurance) * 0.008f;
             }
             else if (strategy == RaceStrategy.LateKick)
             {
-                rating += distance >= DistanceType.M400 ? (athlete.Endurance + athlete.Mental - athlete.Acceleration * 1.4f) * 0.012f : (athlete.Speed - athlete.Acceleration) * 0.010f;
+                rating += (int)distance >= 400 ? (athlete.Endurance + athlete.Mental - athlete.Acceleration * 1.4f) * 0.012f : (athlete.Speed - athlete.Acceleration) * 0.010f;
             }
 
             if (athlete.HasTrait(TraitType.ExplosiveStarter) && strategy == RaceStrategy.FastStart) rating += 0.8f;
@@ -80,7 +80,7 @@ namespace TrackDynasty.Mvp03.Systems
 
             float finishTime = PerformanceModel.EstimateTime(distance, athlete.Age, rating);
             finishTime *= Random.Range(0.995f, 1.005f);
-            finishTime = RoundTime(finishTime, distance);
+            finishTime = RoundTime(finishTime);
             return new RaceRunner
             {
                 Name = athlete.DisplayName,
@@ -96,23 +96,19 @@ namespace TrackDynasty.Mvp03.Systems
             float rating = meet.FieldStrength + Random.Range(-meet.FieldSpread, meet.FieldSpread + 1);
             if (meet.IsChampionship) rating += Random.Range(0f, 2.5f);
             float finishTime = PerformanceModel.EstimateTime(distance, athlete.Age, rating) * Random.Range(0.994f, 1.006f);
-            finishTime = RoundTime(finishTime, distance);
+            finishTime = RoundTime(finishTime);
             RaceStrategy style = (RaceStrategy)Random.Range(0, 3);
             return new RaceRunner
             {
                 Name = FirstNames[Random.Range(0, FirstNames.Length)] + " " + LastNames[Random.Range(0, LastNames.Length)],
-                CountryCode = meet.Range <= CompetitionRange.Country ? "POL" : Countries[Random.Range(0, Countries.Length)],
+                CountryCode = (int)meet.Range <= (int)CompetitionRange.Country ? "POL" : Countries[Random.Range(0, Countries.Length)],
                 IsPlayer = false,
                 FinishTime = finishTime,
                 SplitTimes = BuildSplits(finishTime, style, false)
             };
         }
 
-        private static float RoundTime(float time, DistanceType distance)
-        {
-            float precision = distance <= DistanceType.M400 ? 100f : 100f;
-            return Mathf.Round(time * precision) / precision;
-        }
+        private static float RoundTime(float time) => Mathf.Round(time * 100f) / 100f;
 
         private static float[] BuildSplits(float finishTime, RaceStrategy strategy, bool player)
         {
