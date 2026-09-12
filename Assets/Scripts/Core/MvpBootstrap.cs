@@ -8,7 +8,7 @@ namespace TrackDynasty.Mvp03.Core
         private static void Boot()
         {
             if (Object.FindFirstObjectByType<GameManager>() != null) return;
-            GameObject root = new GameObject("TrackDynasty_MVP03");
+            GameObject root = new GameObject("TrackDynasty_WeeklyCareer");
             root.AddComponent<GameManager>();
         }
     }
