@@ -46,9 +46,9 @@ namespace TrackDynasty.Mvp03.UI.Screens
             UIFactory.Text(stack, "Expected winner: " + PerformanceModel.FormatTime(CompetitionSystem.ExpectedWinningTime(competition, athlete.Category, distance)) + " · average field: " + PerformanceModel.FormatTime(CompetitionSystem.ExpectedAverageTime(competition, athlete.Category, distance)), 13, TextAnchor.MiddleLeft, UITheme.Gold, FontStyle.Bold, 34f);
 
             UIFactory.Text(stack, "RACE STRATEGY", 15, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Bold, 25f);
-            AddStrategy(stack, RaceStrategy.FastStart, "Fast Start", distance <= DistanceType.M400 ? "Attack early. Better for acceleration-heavy athletes." : "Push the opening phase harder, with a higher risk of fading later.");
+            AddStrategy(stack, RaceStrategy.FastStart, "Fast Start", (int)distance <= 400 ? "Attack early. Better for acceleration-heavy athletes." : "Push the opening phase harder, with a higher risk of fading later.");
             AddStrategy(stack, RaceStrategy.Balanced, "Balanced", "Lowest tactical risk. Uses the athlete's normal race profile.");
-            AddStrategy(stack, RaceStrategy.LateKick, "Late Kick", distance >= DistanceType.M400 ? "Save more for the finish. Better for endurance and mental strength." : "Hold slightly more back for the final phase.");
+            AddStrategy(stack, RaceStrategy.LateKick, "Late Kick", (int)distance >= 400 ? "Save more for the finish. Better for endurance and mental strength." : "Hold slightly more back for the final phase.");
 
             UIFactory.Button(stack, "START " + DomainLabels.Distance(distance).ToUpperInvariant(), () => { Manager.StartRace(); Controller.OpenRace(); }, UITheme.Green, 56f);
         }
