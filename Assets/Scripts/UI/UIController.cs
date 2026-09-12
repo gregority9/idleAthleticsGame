@@ -1,12 +1,11 @@
-using UnityEngine;
 using System;
-using UnityEngine.Events;
-using UnityEngine.UI;
 using System.Collections.Generic;
 using TrackDynasty.Mvp03.Core;
 using TrackDynasty.Mvp03.Domain;
 using TrackDynasty.Mvp03.UI.Screens;
+using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.UI;
 
 namespace TrackDynasty.Mvp03.UI
 {
@@ -31,15 +30,8 @@ namespace TrackDynasty.Mvp03.UI
             Refresh();
         }
 
-        public virtual void Hide()
-        {
-            gameObject.SetActive(false);
-        }
-
-        public virtual void Refresh()
-        {
-            if (!_initialized) return;
-        }
+        public virtual void Hide() => gameObject.SetActive(false);
+        public virtual void Refresh() { if (!_initialized) return; }
 
         protected void Rebuild()
         {
@@ -49,20 +41,15 @@ namespace TrackDynasty.Mvp03.UI
 
         protected abstract void Build();
     }
-}
 
-namespace TrackDynasty.Mvp03.UI
-{
     public enum ScreenId
     {
-        ScoutChoice,
+        Setup,
         HQ,
         Team,
         Athlete,
         Calendar,
-        Scout,
         Applications,
-        HallOfFame,
         RacePrep,
         Race,
         Results
@@ -75,8 +62,10 @@ namespace TrackDynasty.Mvp03.UI
         private RectTransform _screenHost;
         private GameObject _header;
         private GameObject _nav;
-        private Text _dateText;
+        private Text _managementText;
+        private Text _weekText;
         private Text _cashText;
+        private Text _rosterText;
         private Text _repText;
         private readonly Dictionary<ScreenId, GameScreen> _screens = new Dictionary<ScreenId, GameScreen>();
         private ScreenId _current;
@@ -90,11 +79,7 @@ namespace TrackDynasty.Mvp03.UI
             BuildChrome();
             BuildScreens();
             _manager.StateChanged += OnStateChanged;
-
-            if (_manager.State.ChosenScout == null)
-                Navigate(ScreenId.ScoutChoice);
-            else
-                Navigate(ScreenId.HQ);
+            Navigate(_manager.State.SetupCompleted ? ScreenId.HQ : ScreenId.Setup);
         }
 
         private void OnDestroy()
@@ -104,7 +89,7 @@ namespace TrackDynasty.Mvp03.UI
 
         private void BuildCanvas()
         {
-            GameObject canvasGo = new GameObject("MVP03_Canvas", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
+            GameObject canvasGo = new GameObject("TrackDynasty_Canvas", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
             canvasGo.transform.SetParent(transform, false);
             _canvas = canvasGo.GetComponent<Canvas>();
             _canvas.renderMode = RenderMode.ScreenSpaceOverlay;
@@ -131,48 +116,35 @@ namespace TrackDynasty.Mvp03.UI
             headerRt.anchorMin = new Vector2(0f, 1f);
             headerRt.anchorMax = new Vector2(1f, 1f);
             headerRt.pivot = new Vector2(0.5f, 1f);
-            headerRt.sizeDelta = new Vector2(0f, 74f);
+            headerRt.sizeDelta = new Vector2(0f, 92f);
             headerRt.anchoredPosition = Vector2.zero;
-            Image headerBg = _header.AddComponent<Image>();
-            headerBg.color = UITheme.Panel;
+            _header.AddComponent<Image>().color = UITheme.Panel;
 
-            Text logo = UIFactory.Text(_header.transform, "TRACK DYNASTY", 24, TextAnchor.MiddleLeft, UITheme.Text, FontStyle.Bold, 34f);
-            RectTransform logoRt = logo.rectTransform;
-            logoRt.anchorMin = new Vector2(0f, 0.5f);
-            logoRt.anchorMax = new Vector2(0f, 0.5f);
-            logoRt.pivot = new Vector2(0f, 0.5f);
-            logoRt.anchoredPosition = new Vector2(16f, 14f);
-            logoRt.sizeDelta = new Vector2(220f, 32f);
+            _managementText = UIFactory.Text(_header.transform, "", 20, TextAnchor.MiddleLeft, UITheme.Text, FontStyle.Bold, 30f);
+            RectTransform managementRt = _managementText.rectTransform;
+            managementRt.anchorMin = new Vector2(0f, 1f);
+            managementRt.anchorMax = new Vector2(0f, 1f);
+            managementRt.pivot = new Vector2(0f, 1f);
+            managementRt.anchoredPosition = new Vector2(14f, -8f);
+            managementRt.sizeDelta = new Vector2(250f, 30f);
 
-            _dateText = UIFactory.Text(_header.transform, "", 13, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Normal, 22f);
-            RectTransform dateRt = _dateText.rectTransform;
-            dateRt.anchorMin = new Vector2(0f, 0f);
-            dateRt.anchorMax = new Vector2(0f, 0f);
-            dateRt.pivot = new Vector2(0f, 0f);
-            dateRt.anchoredPosition = new Vector2(16f, 8f);
-            dateRt.sizeDelta = new Vector2(220f, 20f);
+            _weekText = UIFactory.Text(_header.transform, "", 13, TextAnchor.MiddleLeft, UITheme.Green, FontStyle.Bold, 22f);
+            RectTransform weekRt = _weekText.rectTransform;
+            weekRt.anchorMin = new Vector2(0f, 0f);
+            weekRt.anchorMax = new Vector2(0f, 0f);
+            weekRt.pivot = new Vector2(0f, 0f);
+            weekRt.anchoredPosition = new Vector2(14f, 10f);
+            weekRt.sizeDelta = new Vector2(240f, 22f);
 
-            _cashText = UIFactory.Text(_header.transform, "", 14, TextAnchor.MiddleRight, UITheme.Gold, FontStyle.Bold, 24f);
-            RectTransform cashRt = _cashText.rectTransform;
-            cashRt.anchorMin = new Vector2(1f, 1f);
-            cashRt.anchorMax = new Vector2(1f, 1f);
-            cashRt.pivot = new Vector2(1f, 1f);
-            cashRt.anchoredPosition = new Vector2(-16f, -10f);
-            cashRt.sizeDelta = new Vector2(140f, 22f);
-
-            _repText = UIFactory.Text(_header.transform, "", 13, TextAnchor.MiddleRight, UITheme.Green, FontStyle.Bold, 22f);
-            RectTransform repRt = _repText.rectTransform;
-            repRt.anchorMin = new Vector2(1f, 0f);
-            repRt.anchorMax = new Vector2(1f, 0f);
-            repRt.pivot = new Vector2(1f, 0f);
-            repRt.anchoredPosition = new Vector2(-16f, 8f);
-            repRt.sizeDelta = new Vector2(140f, 20f);
+            _cashText = RightHeaderText(10f, UITheme.Gold, 15);
+            _rosterText = RightHeaderText(34f, UITheme.Text, 13);
+            _repText = RightHeaderText(56f, UITheme.Green, 13);
 
             _screenHost = UIFactory.Rect(UIFactory.CreateRect("ScreenHost", _canvas.transform));
             _screenHost.anchorMin = Vector2.zero;
             _screenHost.anchorMax = Vector2.one;
             _screenHost.offsetMin = new Vector2(0f, 64f);
-            _screenHost.offsetMax = new Vector2(0f, -76f);
+            _screenHost.offsetMax = new Vector2(0f, -94f);
 
             _nav = UIFactory.CreateRect("BottomNav", _canvas.transform);
             RectTransform navRt = UIFactory.Rect(_nav);
@@ -180,39 +152,43 @@ namespace TrackDynasty.Mvp03.UI
             navRt.anchorMax = new Vector2(1f, 0f);
             navRt.pivot = new Vector2(0.5f, 0f);
             navRt.sizeDelta = new Vector2(0f, 64f);
-            navRt.anchoredPosition = Vector2.zero;
-            Image navBg = _nav.AddComponent<Image>();
-            navBg.color = UITheme.Panel;
-            HorizontalLayoutGroup navLayout = _nav.AddComponent<HorizontalLayoutGroup>();
-            navLayout.padding = new RectOffset(8, 8, 7, 7);
-            navLayout.spacing = 6f;
-            navLayout.childControlWidth = true;
-            navLayout.childControlHeight = true;
-            navLayout.childForceExpandWidth = true;
-            navLayout.childForceExpandHeight = true;
+            _nav.AddComponent<Image>().color = UITheme.Panel;
+            HorizontalLayoutGroup layout = _nav.AddComponent<HorizontalLayoutGroup>();
+            layout.padding = new RectOffset(8, 8, 7, 7);
+            layout.spacing = 6f;
+            layout.childControlWidth = true;
+            layout.childControlHeight = true;
+            layout.childForceExpandWidth = true;
+            layout.childForceExpandHeight = true;
 
             AddNav("HQ", ScreenId.HQ);
             AddNav("TEAM", ScreenId.Team);
             AddNav("CAL", ScreenId.Calendar);
-            AddNav("SCOUT", ScreenId.Scout);
             AddNav("INBOX", ScreenId.Applications);
         }
 
-        private void AddNav(string label, ScreenId id)
+        private Text RightHeaderText(float bottom, Color color, int size)
         {
-            UIFactory.Button(_nav.transform, label, () => Navigate(id), UITheme.PanelAlt, 50f);
+            Text text = UIFactory.Text(_header.transform, "", size, TextAnchor.MiddleRight, color, FontStyle.Bold, 22f);
+            RectTransform rt = text.rectTransform;
+            rt.anchorMin = new Vector2(1f, 0f);
+            rt.anchorMax = new Vector2(1f, 0f);
+            rt.pivot = new Vector2(1f, 0f);
+            rt.anchoredPosition = new Vector2(-14f, bottom);
+            rt.sizeDelta = new Vector2(170f, 22f);
+            return text;
         }
+
+        private void AddNav(string label, ScreenId id) => UIFactory.Button(_nav.transform, label, () => Navigate(id), UITheme.PanelAlt, 50f);
 
         private void BuildScreens()
         {
-            AddScreen<ScoutChoiceScreen>(ScreenId.ScoutChoice);
+            AddScreen<SetupScreen>(ScreenId.Setup);
             AddScreen<HQScreen>(ScreenId.HQ);
             AddScreen<TeamScreen>(ScreenId.Team);
             AddScreen<AthleteScreen>(ScreenId.Athlete);
             AddScreen<CalendarScreen>(ScreenId.Calendar);
-            AddScreen<ScoutScreen>(ScreenId.Scout);
             AddScreen<ApplicationsScreen>(ScreenId.Applications);
-            AddScreen<HallOfFameScreen>(ScreenId.HallOfFame);
             AddScreen<RacePrepScreen>(ScreenId.RacePrep);
             AddScreen<RaceScreen>(ScreenId.Race);
             AddScreen<ResultsScreen>(ScreenId.Results);
@@ -221,8 +197,7 @@ namespace TrackDynasty.Mvp03.UI
         private void AddScreen<T>(ScreenId id) where T : GameScreen
         {
             GameObject go = UIFactory.CreateRect(id.ToString(), _screenHost);
-            RectTransform rt = UIFactory.Rect(go);
-            UIFactory.Stretch(rt, 0, 0, 0, 0);
+            UIFactory.Stretch(UIFactory.Rect(go), 0, 0, 0, 0);
             T screen = go.AddComponent<T>();
             screen.Initialize(_manager, this);
             screen.Hide();
@@ -231,14 +206,13 @@ namespace TrackDynasty.Mvp03.UI
 
         public void Navigate(ScreenId id)
         {
-            foreach (KeyValuePair<ScreenId, GameScreen> pair in _screens)
-                pair.Value.Hide();
+            foreach (KeyValuePair<ScreenId, GameScreen> pair in _screens) pair.Value.Hide();
             _current = id;
-            bool immersive = id == ScreenId.ScoutChoice || id == ScreenId.RacePrep || id == ScreenId.Race || id == ScreenId.Results;
+            bool immersive = id == ScreenId.Setup || id == ScreenId.RacePrep || id == ScreenId.Race || id == ScreenId.Results;
             _header.SetActive(!immersive);
             _nav.SetActive(!immersive);
             _screenHost.offsetMin = new Vector2(0f, immersive ? 0f : 64f);
-            _screenHost.offsetMax = new Vector2(0f, immersive ? 0f : -76f);
+            _screenHost.offsetMax = new Vector2(0f, immersive ? 0f : -94f);
             RefreshChrome();
             _screens[id].Show();
         }
@@ -255,33 +229,24 @@ namespace TrackDynasty.Mvp03.UI
             if (_manager.ActiveCompetition != null) Navigate(ScreenId.RacePrep);
         }
 
-        public void OpenRace()
-        {
-            Navigate(ScreenId.Race);
-        }
-
-        public void OpenResults()
-        {
-            Navigate(ScreenId.Results);
-        }
-
-        public void OpenHallOfFame()
-        {
-            Navigate(ScreenId.HallOfFame);
-        }
+        public void OpenRace() => Navigate(ScreenId.Race);
+        public void OpenResults() => Navigate(ScreenId.Results);
 
         private void OnStateChanged()
         {
             RefreshChrome();
             if (_screens.TryGetValue(_current, out GameScreen screen)) screen.Refresh();
+            if (!_manager.State.SetupCompleted && _current != ScreenId.Setup) Navigate(ScreenId.Setup);
         }
 
         private void RefreshChrome()
         {
             if (_manager == null || _manager.State == null) return;
-            _dateText.text = _manager.State.CurrentDate.LongLabel;
+            _managementText.text = _manager.State.Management != null ? _manager.State.Management.Name.ToUpperInvariant() : "TRACK DYNASTY";
+            _weekText.text = _manager.State.CurrentWeek != null ? _manager.State.CurrentWeek.Label : "WEEK 01/52 • 2026";
             _cashText.text = "$" + _manager.State.Cash.ToString("N0");
-            _repText.text = "REP " + _manager.State.Reputation.ToString("N0");
+            _rosterText.text = "ATHLETES " + (_manager.State.Roster != null ? _manager.State.Roster.Count : 0);
+            _repText.text = "REP " + (_manager.State.Management != null ? _manager.State.Management.Reputation : 0).ToString("N0");
         }
     }
 }
