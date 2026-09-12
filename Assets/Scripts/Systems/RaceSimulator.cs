@@ -9,6 +9,8 @@ namespace TrackDynasty.Mvp03.Systems
         private static readonly string[] FirstNames = { "Jakub", "Michał", "Antoni", "Noah", "Liam", "Mateo", "Elias", "Lucas", "Kofi", "Sofia", "Maja", "Julia" };
         private static readonly string[] LastNames = { "Nowak", "Kowalski", "Smith", "Johnson", "Becker", "Martin", "Costa", "Mensah", "Rossi", "Brown" };
         private static readonly string[] Countries = { "POL", "GER", "FRA", "ITA", "GBR", "USA", "CAN", "NGR", "BRA" };
+        private static readonly string[] EuropeCountries = { "POL", "GER", "FRA", "ITA", "GBR" };
+        private static readonly string[] NorthAmericaCountries = { "USA", "CAN" };
 
         public static RaceResult Simulate(GameState state, Athlete athlete, CompetitionMeet meet, DistanceType distance, RaceStrategy strategy)
         {
@@ -67,19 +69,14 @@ namespace TrackDynasty.Mvp03.Systems
             if (athlete.HasTrait(TraitType.BigStagePerformer) && meet.IsChampionship) rating += 1.5f;
 
             if (strategy == RaceStrategy.FastStart)
-            {
                 rating += (int)distance <= 400 ? (athlete.Acceleration - athlete.Endurance) * 0.018f : (athlete.Acceleration - athlete.Endurance) * 0.008f;
-            }
             else if (strategy == RaceStrategy.LateKick)
-            {
                 rating += (int)distance >= 400 ? (athlete.Endurance + athlete.Mental - athlete.Acceleration * 1.4f) * 0.012f : (athlete.Speed - athlete.Acceleration) * 0.010f;
-            }
 
             if (athlete.HasTrait(TraitType.ExplosiveStarter) && strategy == RaceStrategy.FastStart) rating += 0.8f;
             if (athlete.HasTrait(TraitType.StrongFinisher) && strategy == RaceStrategy.LateKick) rating += 0.8f;
 
-            float finishTime = PerformanceModel.EstimateTime(distance, athlete.Age, rating);
-            finishTime *= Random.Range(0.995f, 1.005f);
+            float finishTime = PerformanceModel.EstimateTime(distance, athlete.Age, rating) * Random.Range(0.995f, 1.005f);
             finishTime = RoundTime(finishTime);
             return new RaceRunner
             {
@@ -101,11 +98,25 @@ namespace TrackDynasty.Mvp03.Systems
             return new RaceRunner
             {
                 Name = FirstNames[Random.Range(0, FirstNames.Length)] + " " + LastNames[Random.Range(0, LastNames.Length)],
-                CountryCode = (int)meet.Range <= (int)CompetitionRange.Country ? "POL" : Countries[Random.Range(0, Countries.Length)],
+                CountryCode = OpponentCountry(meet),
                 IsPlayer = false,
                 FinishTime = finishTime,
                 SplitTimes = BuildSplits(finishTime, style, false)
             };
+        }
+
+        private static string OpponentCountry(CompetitionMeet meet)
+        {
+            if (meet.Range == CompetitionRange.Country && !string.IsNullOrEmpty(meet.CountryCode)) return meet.CountryCode;
+            if (meet.Range == CompetitionRange.Continent)
+            {
+                if (meet.Continent == "Europe") return EuropeCountries[Random.Range(0, EuropeCountries.Length)];
+                if (meet.Continent == "North America") return NorthAmericaCountries[Random.Range(0, NorthAmericaCountries.Length)];
+                if (meet.Continent == "South America") return "BRA";
+                if (meet.Continent == "Africa") return "NGR";
+            }
+            if ((int)meet.Range <= (int)CompetitionRange.Regional) return "POL";
+            return Countries[Random.Range(0, Countries.Length)];
         }
 
         private static float RoundTime(float time) => Mathf.Round(time * 100f) / 100f;
