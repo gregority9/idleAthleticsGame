@@ -1,15 +1,16 @@
+using System.Collections.Generic;
+using System.Text;
 using TrackDynasty.Mvp03.Domain;
+using TrackDynasty.Mvp03.Systems;
 using UnityEngine;
 using UnityEngine.UI;
-using System.Collections.Generic;
-using TrackDynasty.Mvp03.Systems;
-using System;
-using System.Text;
 
 namespace TrackDynasty.Mvp03.UI.Screens
 {
     public class AthleteScreen : GameScreen
     {
+        private static readonly DistanceType[] Distances = { DistanceType.M100, DistanceType.M200, DistanceType.M400, DistanceType.M800, DistanceType.M1500 };
+
         public override void Refresh() { Rebuild(); }
 
         protected override void Build()
@@ -21,252 +22,204 @@ namespace TrackDynasty.Mvp03.UI.Screens
                 return;
             }
 
-            CompetitionSystem.EnsureOffers(athlete, Manager.State.CurrentDate, Manager.State.Reputation);
             ScrollRect scroll;
             Transform stack = UIFactory.ScrollContent(Content, out scroll, 14);
-
-            Transform hero = UIFactory.Horizontal(stack, 10f, 72f);
+            Transform hero = UIFactory.Horizontal(stack, 10f, 64f);
             Image flag = UIFactory.Panel(hero, Color.white, "Flag");
             flag.sprite = FlagSpriteFactory.Get(athlete.CountryCode);
             flag.preserveAspect = true;
-            UIFactory.SetPreferredWidth(flag, 64f);
+            UIFactory.SetPreferredWidth(flag, 56f);
             Transform heroText = UIFactory.Vertical(hero, 0f, 0, "HeroText");
             UIFactory.SetFlexibleWidth(heroText.GetComponent<RectTransform>());
-            UIFactory.Text(heroText, athlete.DisplayName, 24, TextAnchor.MiddleLeft, UITheme.Text, FontStyle.Bold, 34f);
-            UIFactory.Text(heroText, athlete.CountryCode + " · Age " + athlete.Age + " · OVR " + athlete.Overall, 14, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Normal, 24f);
+            UIFactory.Text(heroText, athlete.DisplayName, 23, TextAnchor.MiddleLeft, UITheme.Text, FontStyle.Bold, 32f);
+            UIFactory.Text(heroText, athlete.CountryCode + " · Age " + athlete.Age + " · " + athlete.Category + " · OVR " + athlete.Overall, 13, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Normal, 22f);
 
-            Transform metrics = UIFactory.Horizontal(stack, 8f, 64f);
-            AddMetric(metrics, "PB", athlete.PersonalBest.ToString("0.00") + "s", UITheme.Gold);
+            Transform metrics = UIFactory.Horizontal(stack, 7f, 62f);
             AddMetric(metrics, "FORM", Mathf.RoundToInt(athlete.Form * 100f) + "%", UITheme.Green);
             AddMetric(metrics, "FATIGUE", Mathf.RoundToInt(athlete.Fatigue * 100f) + "%", UITheme.Text);
+            AddMetric(metrics, "POTENTIAL", athlete.PotentialMin + "–" + athlete.PotentialMax, UITheme.Gold);
+
+            if (athlete.InjuryWeeks > 0)
+                UIFactory.Text(stack, "INJURED · " + athlete.InjuryWeeks + " week(s) remaining. Training is replaced by recovery.", 13, TextAnchor.MiddleLeft, UITheme.Red, FontStyle.Bold, 34f);
+
+            UIFactory.Text(stack, "DISTANCE RATINGS & PERSONAL BESTS", 15, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Bold, 24f);
+            for (int i = 0; i < Distances.Length; i++) AddDistanceRow(stack, athlete, Distances[i]);
 
             UIFactory.Text(stack, "ATTRIBUTES", 15, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Bold, 24f);
             AddAttribute(stack, "Speed", athlete.Speed);
             AddAttribute(stack, "Acceleration", athlete.Acceleration);
             AddAttribute(stack, "Strength", athlete.Strength);
+            AddAttribute(stack, "Endurance", athlete.Endurance);
             AddAttribute(stack, "Technique", athlete.Technique);
             AddAttribute(stack, "Mental", athlete.Mental);
-            UIFactory.Text(stack, "Visible potential estimate: " + athlete.PotentialMin + "–" + athlete.PotentialMax + ". Exact potential remains hidden.", 13, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Normal, 38f);
 
-            UIFactory.Text(stack, "TRAITS", 15, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Bold, 24f);
-            string traits = athlete.Traits == null || athlete.Traits.Count == 0 ? "No special traits" : string.Join(" · ", athlete.Traits.ConvertAll(t => TraitLabel(t)).ToArray());
-            UIFactory.Text(stack, traits, 14, TextAnchor.MiddleLeft, UITheme.Text, FontStyle.Normal, 40f);
+            UIFactory.Text(stack, "TRAINING DISTANCE", 15, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Bold, 24f);
+            Transform distanceButtons = UIFactory.Horizontal(stack, 5f, 40f);
+            for (int i = 0; i < Distances.Length; i++) AddDistanceButton(distanceButtons, athlete, Distances[i]);
 
             UIFactory.Text(stack, "TRAINING FOCUS", 15, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Bold, 24f);
-            Transform training = UIFactory.Horizontal(stack, 6f, 42f);
-            AddTrainingButton(training, athlete, TrainingFocus.Sprint);
-            AddTrainingButton(training, athlete, TrainingFocus.Strength);
-            AddTrainingButton(training, athlete, TrainingFocus.Technique);
-            AddTrainingButton(training, athlete, TrainingFocus.Recovery);
+            Transform focusA = UIFactory.Horizontal(stack, 5f, 38f);
+            AddFocusButton(focusA, athlete, TrainingFocus.Speed, "SPD");
+            AddFocusButton(focusA, athlete, TrainingFocus.Acceleration, "ACC");
+            AddFocusButton(focusA, athlete, TrainingFocus.Strength, "STR");
+            AddFocusButton(focusA, athlete, TrainingFocus.Endurance, "END");
+            Transform focusB = UIFactory.Horizontal(stack, 5f, 38f);
+            AddFocusButton(focusB, athlete, TrainingFocus.Technique, "TECH");
+            AddFocusButton(focusB, athlete, TrainingFocus.Mental, "MENT");
+            AddFocusButton(focusB, athlete, TrainingFocus.Recovery, "RECOVERY");
 
-            UIFactory.Text(stack, "COMPETITION PLAN", 15, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Bold, 24f);
-            if (athlete.ScheduledCompetition != null)
+            CoachProfile coach = Manager.GetCoach(athlete);
+            UIFactory.Text(stack, "COACH", 15, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Bold, 24f);
+            UIFactory.Text(stack, coach == null ? "Manual training · no coach assigned yet. Coach hiring/assignment is prepared in the data model for the next progression layer." : coach.Name + " · primary " + DomainLabels.Distance(coach.PrimaryDistance) + " · capacity " + coach.Capacity, 12, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Normal, 40f);
+
+            UIFactory.Text(stack, "COMPETITION PLAN", 15, TextAnchor.MiddleLeft, UITheme.Gold, FontStyle.Bold, 24f);
+            CompetitionMeet scheduled = Manager.ScheduledMeet(athlete);
+            if (scheduled != null)
             {
-                CompetitionOffer scheduled = athlete.ScheduledCompetition;
-                Image card = UIFactory.FixedPanel(stack, UITheme.Panel, 106f, "ScheduledCard");
+                Image card = UIFactory.FixedPanel(stack, UITheme.Panel, 126f, "ScheduledMeet");
                 Transform inner = UIFactory.Vertical(card.transform, 3f, 10, "Inner");
                 UIFactory.Stretch(inner.GetComponent<RectTransform>(), 0, 0, 0, 0);
-                UIFactory.Text(inner, scheduled.Date.LongLabel + " · " + scheduled.Name, 16, TextAnchor.MiddleLeft, UITheme.Text, FontStyle.Bold, 28f);
-                UIFactory.Text(inner, scheduled.City + " · " + scheduled.Tier + " · " + CompetitionSystem.QualificationText(scheduled.Tier), 13, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Normal, 24f);
-                if (scheduled.Date.IsSameDay(Manager.State.CurrentDate))
-                    UIFactory.Button(inner, "ENTER RACE", () => Controller.OpenRacePrep(athlete), UITheme.Gold, 38f);
+                DistanceType distance = athlete.ScheduledCompetition.Distance;
+                UIFactory.Text(inner, scheduled.Week.ShortLabel + " · " + scheduled.Name, 16, TextAnchor.MiddleLeft, UITheme.Text, FontStyle.Bold, 25f);
+                UIFactory.Text(inner, scheduled.City + " · " + DomainLabels.Range(scheduled.Range) + " · " + DomainLabels.Distance(distance) + " · entry already paid", 12, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Normal, 21f);
+                UIFactory.Text(inner, "Expected winner " + PerformanceModel.FormatTime(CompetitionSystem.ExpectedWinningTime(scheduled, athlete.Category, distance)) + " · average " + PerformanceModel.FormatTime(CompetitionSystem.ExpectedAverageTime(scheduled, athlete.Category, distance)), 12, TextAnchor.MiddleLeft, UITheme.Gold, FontStyle.Bold, 22f);
+                if (scheduled.Week.IsSame(Manager.State.CurrentWeek))
+                    UIFactory.Button(inner, "ENTER RACE", () => Controller.OpenRacePrep(athlete), UITheme.Gold, 34f);
                 else
-                    UIFactory.Text(inner, "Scheduled in " + DaysUntil(scheduled.Date) + " day(s)", 13, TextAnchor.MiddleLeft, UITheme.Green, FontStyle.Bold, 22f);
+                    UIFactory.Button(inner, "CANCEL ENTRY", () => Manager.CancelScheduledCompetition(athlete), UITheme.PanelAlt, 34f);
             }
             else
             {
-                UIFactory.Text(stack, "Choose where this athlete should race next:", 14, TextAnchor.MiddleLeft, UITheme.Text, FontStyle.Normal, 26f);
-                for (int i = 0; i < athlete.CompetitionOffers.Count; i++)
-                {
-                    CompetitionOffer offer = athlete.CompetitionOffers[i];
-                    bool canEnter = CompetitionSystem.CanEnter(athlete, offer);
-                    Image card = UIFactory.FixedPanel(stack, UITheme.Panel, 112f, "OfferCard");
-                    Transform inner = UIFactory.Vertical(card.transform, 3f, 10, "OfferInner");
-                    UIFactory.Stretch(inner.GetComponent<RectTransform>(), 0, 0, 0, 0);
-                    UIFactory.Text(inner, offer.Date.ShortLabel + " · " + offer.Name, 16, TextAnchor.MiddleLeft, UITheme.Text, FontStyle.Bold, 26f);
-                    UIFactory.Text(inner, offer.City + " · " + offer.Tier + (offer.IsChampionship ? " · CHAMPIONSHIP" : ""), 13, TextAnchor.MiddleLeft, UITheme.Gold, FontStyle.Bold, 22f);
-                    UIFactory.Text(inner, CompetitionSystem.QualificationText(offer.Tier) + " · Reward up to $" + offer.CashReward, 13, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Normal, 22f);
-                    UIFactory.Button(inner, canEnter ? "SCHEDULE" : "NOT QUALIFIED", () => Manager.ScheduleCompetition(athlete, offer), canEnter ? UITheme.Green : UITheme.PanelAlt, 34f, canEnter);
-                }
+                List<CompetitionMeet> meets = Manager.UpcomingMeets(athlete, 8);
+                for (int i = 0; i < meets.Count; i++) AddMeetCard(stack, athlete, meets[i]);
             }
 
             UIFactory.Text(stack, "CAREER", 15, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Bold, 24f);
-            UIFactory.Text(stack, "Races " + athlete.Races + " · Wins " + athlete.Wins + " · Championships " + athlete.Championships, 14, TextAnchor.MiddleLeft, UITheme.Text, FontStyle.Normal, 24f);
-            UIFactory.Text(stack, "PB progression: " + BuildPbSparkline(athlete), 14, TextAnchor.MiddleLeft, UITheme.Green, FontStyle.Bold, 28f);
-
-            int start = Mathf.Max(0, athlete.RaceHistory.Count - 8);
-            for (int i = athlete.RaceHistory.Count - 1; i >= start; i--)
+            UIFactory.Text(stack, "Races " + athlete.CareerRaces + " · Wins " + athlete.CareerWins + " · Sponsor interest " + Mathf.RoundToInt(athlete.SponsorInterest), 13, TextAnchor.MiddleLeft, UITheme.Text, FontStyle.Normal, 24f);
+            int historyStart = Mathf.Max(0, athlete.RaceHistory.Count - 8);
+            for (int i = athlete.RaceHistory.Count - 1; i >= historyStart; i--)
             {
                 RaceHistoryEntry entry = athlete.RaceHistory[i];
-                string badges = (entry.PersonalBest ? " PB" : "") + (entry.ClubRecord ? " CR" : "") + (entry.WorldRecord ? " WR" : "");
-                UIFactory.Text(stack, entry.Day.ToString("00") + "/" + entry.Month.ToString("00") + "/" + entry.Year + " · " + entry.EventName + " · P" + entry.Place + " · " + entry.Time.ToString("0.00") + "s" + badges, 13, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Normal, 24f);
+                string badges = (entry.PersonalBest ? " PB" : "") + (entry.ClubRecord ? " CR" : "");
+                UIFactory.Text(stack, "W" + entry.Week.ToString("00") + " " + entry.Year + " · " + DomainLabels.Distance(entry.Distance) + " · " + entry.EventName + " · P" + entry.Place + " · " + PerformanceModel.FormatTime(entry.Time) + badges, 12, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Normal, 22f);
             }
+        }
+
+        private void AddDistanceRow(Transform parent, Athlete athlete, DistanceType distance)
+        {
+            Transform row = UIFactory.Horizontal(parent, 7f, 30f);
+            Text name = UIFactory.Text(row, DomainLabels.Distance(distance), 14, TextAnchor.MiddleLeft, UITheme.Text, FontStyle.Bold, 30f);
+            UIFactory.SetPreferredWidth(name, 58f);
+            Text rating = UIFactory.Text(row, "RATING " + athlete.DistanceRating(distance), 13, TextAnchor.MiddleLeft, UITheme.Green, FontStyle.Bold, 30f);
+            UIFactory.SetFlexibleWidth(rating);
+            DistanceRecord record = athlete.GetRecord(distance);
+            Text pb = UIFactory.Text(row, record.HasPersonalBest ? "PB " + PerformanceModel.FormatTime(record.PersonalBest) : "PB —", 13, TextAnchor.MiddleRight, record.HasPersonalBest ? UITheme.Gold : UITheme.Muted, FontStyle.Bold, 30f);
+            UIFactory.SetPreferredWidth(pb, 110f);
+        }
+
+        private void AddAttribute(Transform parent, string label, int value)
+        {
+            Transform row = UIFactory.Horizontal(parent, 8f, 26f);
+            Text name = UIFactory.Text(row, label, 13, TextAnchor.MiddleLeft, UITheme.Text, FontStyle.Normal, 26f);
+            UIFactory.SetFlexibleWidth(name);
+            Text score = UIFactory.Text(row, value.ToString(), 13, TextAnchor.MiddleRight, UITheme.Green, FontStyle.Bold, 26f);
+            UIFactory.SetPreferredWidth(score, 44f);
         }
 
         private void AddMetric(Transform parent, string label, string value, Color color)
         {
             Image card = UIFactory.Panel(parent, UITheme.Panel, "Metric");
-            Transform stack = UIFactory.Vertical(card.transform, 0f, 4, "Stack");
+            Transform stack = UIFactory.Vertical(card.transform, 0f, 4, "MetricStack");
             UIFactory.Stretch(stack.GetComponent<RectTransform>(), 0, 0, 0, 0);
-            UIFactory.Text(stack, label, 11, TextAnchor.MiddleCenter, UITheme.Muted, FontStyle.Bold, 20f);
-            UIFactory.Text(stack, value, 18, TextAnchor.MiddleCenter, color, FontStyle.Bold, 30f);
+            UIFactory.Text(stack, label, 10, TextAnchor.MiddleCenter, UITheme.Muted, FontStyle.Bold, 18f);
+            UIFactory.Text(stack, value, 16, TextAnchor.MiddleCenter, color, FontStyle.Bold, 30f);
         }
 
-        private void AddAttribute(Transform parent, string label, int value)
+        private void AddDistanceButton(Transform parent, Athlete athlete, DistanceType distance)
         {
-            Transform row = UIFactory.Horizontal(parent, 8f, 28f);
-            Text name = UIFactory.Text(row, label, 14, TextAnchor.MiddleLeft, UITheme.Text, FontStyle.Normal, 28f);
-            UIFactory.SetFlexibleWidth(name);
-            Text score = UIFactory.Text(row, value.ToString(), 14, TextAnchor.MiddleRight, UITheme.Green, FontStyle.Bold, 28f);
-            UIFactory.SetPreferredWidth(score, 50f);
+            bool active = athlete.TrainingDistance == distance;
+            Button button = UIFactory.Button(parent, ((int)distance).ToString(), () => Manager.SetTrainingDistance(athlete, distance), active ? UITheme.Green : UITheme.PanelAlt, 40f);
+            UIFactory.SetFlexibleWidth(button);
         }
 
-        private void AddTrainingButton(Transform parent, Athlete athlete, TrainingFocus focus)
+        private void AddFocusButton(Transform parent, Athlete athlete, TrainingFocus focus, string label)
         {
             bool active = athlete.TrainingFocus == focus;
-            Button b = UIFactory.Button(parent, ShortTraining(focus), () => Manager.SetTraining(athlete, focus), active ? UITheme.Green : UITheme.PanelAlt, 42f);
-            UIFactory.SetFlexibleWidth(b);
+            Button button = UIFactory.Button(parent, label, () => Manager.SetTrainingFocus(athlete, focus), active ? UITheme.Green : UITheme.PanelAlt, 38f);
+            UIFactory.SetFlexibleWidth(button);
         }
 
-        private string ShortTraining(TrainingFocus focus)
+        private void AddMeetCard(Transform parent, Athlete athlete, CompetitionMeet meet)
         {
-            if (focus == TrainingFocus.Sprint) return "SPRINT";
-            if (focus == TrainingFocus.Strength) return "STR";
-            if (focus == TrainingFocus.Technique) return "TECH";
-            return "REC";
-        }
-
-        private int DaysUntil(GameDate date)
-        {
-            return Mathf.Max(0, (int)(date.ToDateTime() - Manager.State.CurrentDate.ToDateTime()).TotalDays);
-        }
-
-        private string TraitLabel(TraitType trait)
-        {
-            switch (trait)
+            Image card = UIFactory.FixedPanel(parent, UITheme.Panel, 176f, "MeetCard");
+            Transform inner = UIFactory.Vertical(card.transform, 2f, 9, "MeetInner");
+            UIFactory.Stretch(inner.GetComponent<RectTransform>(), 0, 0, 0, 0);
+            UIFactory.Text(inner, meet.Week.ShortLabel + " · " + meet.Name, 15, TextAnchor.MiddleLeft, UITheme.Text, FontStyle.Bold, 24f);
+            UIFactory.Text(inner, meet.City + " · " + DomainLabels.Range(meet.Range) + (meet.IsChampionship ? " · CHAMPIONSHIP" : "") + " · fee $" + meet.EntryFee, 12, TextAnchor.MiddleLeft, UITheme.Gold, FontStyle.Bold, 20f);
+            UIFactory.Text(inner, "Field rating approx. " + Mathf.Max(1, meet.FieldStrength - meet.FieldSpread) + "–" + Mathf.Min(99, meet.FieldStrength + meet.FieldSpread) + " · required rating " + CompetitionSystem.RequiredRating(meet.Range), 11, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Normal, 20f);
+            UIFactory.Text(inner, ExpectedTimes(meet, athlete.Category), 10, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Normal, 38f);
+            Transform buttons = UIFactory.Horizontal(inner, 4f, 34f);
+            for (int i = 0; i < Distances.Length; i++)
             {
-                case TraitType.ExplosiveStarter: return "Explosive Starter";
-                case TraitType.StrongFinisher: return "Strong Finisher";
-                case TraitType.BigStagePerformer: return "Big Stage Performer";
-                case TraitType.FastLearner: return "Fast Learner";
-                case TraitType.InjuryProne: return "Injury Prone";
-                case TraitType.LateBloomer: return "Late Bloomer";
-                case TraitType.Consistent: return "Consistent";
-                case TraitType.Volatile: return "Volatile";
-                default: return trait.ToString();
+                DistanceType distance = Distances[i];
+                bool canEnter = CompetitionSystem.CanEnter(athlete, meet, distance) && Manager.State.Cash >= meet.EntryFee;
+                Button button = UIFactory.Button(buttons, ((int)distance).ToString(), () => Manager.ScheduleCompetition(athlete, meet, distance), canEnter ? UITheme.Green : UITheme.PanelAlt, 34f, canEnter);
+                UIFactory.SetFlexibleWidth(button);
             }
         }
 
-        private string BuildPbSparkline(Athlete athlete)
+        private string ExpectedTimes(CompetitionMeet meet, AgeCategory category)
         {
-            List<float> values = new List<float>();
-            if (athlete.SeasonHistory != null)
+            StringBuilder sb = new StringBuilder("AVG ");
+            for (int i = 0; i < Distances.Length; i++)
             {
-                for (int i = 0; i < athlete.SeasonHistory.Count; i++)
-                    if (athlete.SeasonHistory[i].PbAtEnd < 90f) values.Add(athlete.SeasonHistory[i].PbAtEnd);
+                if (i > 0) sb.Append(" · ");
+                DistanceType d = Distances[i];
+                sb.Append((int)d).Append(" ").Append(PerformanceModel.FormatTime(CompetitionSystem.ExpectedAverageTime(meet, category, d)));
             }
-            if (athlete.PersonalBest < 90f) values.Add(athlete.PersonalBest);
-            if (values.Count == 0) return "—";
-            float min = values[0];
-            float max = values[0];
-            for (int i = 1; i < values.Count; i++) { min = Mathf.Min(min, values[i]); max = Mathf.Max(max, values[i]); }
-            string[] blocks = { "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█" };
-            string output = "";
-            for (int i = 0; i < values.Count; i++)
-            {
-                float normalized = max - min < 0.001f ? 1f : 1f - Mathf.InverseLerp(min, max, values[i]);
-                int index = Mathf.Clamp(Mathf.RoundToInt(normalized * 7f), 0, 7);
-                output += blocks[index];
-            }
-            return output + "  " + athlete.PersonalBest.ToString("0.00") + "s";
+            return sb.ToString();
         }
     }
-}
 
-namespace TrackDynasty.Mvp03.UI.Screens
-{
     public class CalendarScreen : GameScreen
     {
-        private int _selectedMonth;
-
-        public override void Initialize(TrackDynasty.Mvp03.Core.GameManager manager, MainUIController controller)
-        {
-            base.Initialize(manager, controller);
-            _selectedMonth = manager.State.CurrentDate.Month;
-        }
-
-        public override void Refresh()
-        {
-            if (_selectedMonth < 1 || _selectedMonth > 12) _selectedMonth = Manager.State.CurrentDate.Month;
-            Rebuild();
-        }
+        public override void Refresh() { Rebuild(); }
 
         protected override void Build()
         {
             ScrollRect scroll;
             Transform stack = UIFactory.ScrollContent(Content, out scroll, 12);
-            UIFactory.Text(stack, "CALENDAR " + Manager.State.CurrentDate.Year, 28, TextAnchor.MiddleLeft, UITheme.Text, FontStyle.Bold, 42f);
-            UIFactory.Text(stack, "Every athlete schedules competitions independently. The calendar covers the full January–December season.", 13, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Normal, 44f);
+            UIFactory.Text(stack, "COMPETITION CALENDAR " + Manager.State.CurrentWeek.Year, 26, TextAnchor.MiddleLeft, UITheme.Text, FontStyle.Bold, 40f);
+            UIFactory.Text(stack, "Meets are global. You choose which athlete enters which distance; age category, geography and required rating determine eligibility.", 12, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Normal, 44f);
 
-            GameObject gridGo = UIFactory.CreateRect("MonthGrid", stack);
-            LayoutElement gridLe = gridGo.AddComponent<LayoutElement>();
-            gridLe.preferredHeight = 174f;
-            gridLe.minHeight = 174f;
-            GridLayoutGroup grid = gridGo.AddComponent<GridLayoutGroup>();
-            grid.cellSize = new Vector2(91f, 36f);
-            grid.spacing = new Vector2(8f, 8f);
-            grid.padding = new RectOffset(0, 0, 4, 4);
-            grid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
-            grid.constraintCount = 4;
-
-            for (int month = 1; month <= 12; month++)
+            for (int week = Manager.State.CurrentWeek.Week; week <= 52; week++)
             {
-                int captured = month;
-                string label = new DateTime(Manager.State.CurrentDate.Year, month, 1).ToString("MMM").ToUpperInvariant();
-                UIFactory.Button(gridGo.transform, label, () => { _selectedMonth = captured; Refresh(); }, month == _selectedMonth ? UITheme.Green : UITheme.PanelAlt, 36f);
-            }
-
-            string monthName = new DateTime(Manager.State.CurrentDate.Year, _selectedMonth, 1).ToString("MMMM").ToUpperInvariant();
-            UIFactory.Text(stack, monthName, 20, TextAnchor.MiddleLeft, UITheme.Gold, FontStyle.Bold, 32f);
-
-            int days = DateTime.DaysInMonth(Manager.State.CurrentDate.Year, _selectedMonth);
-            for (int day = 1; day <= days; day++)
-            {
-                GameDate date = new GameDate(Manager.State.CurrentDate.Year, _selectedMonth, day);
-                List<Athlete> athletes = EventsOnDate(date);
-                bool today = date.IsSameDay(Manager.State.CurrentDate);
-                float height = Mathf.Max(46f, 34f + athletes.Count * 26f);
-                Image card = UIFactory.FixedPanel(stack, today ? UITheme.GreenDark : UITheme.Panel, height, "CalendarDay");
-                Transform inner = UIFactory.Vertical(card.transform, 1f, 8, "DayInner");
-                UIFactory.Stretch(inner.GetComponent<RectTransform>(), 0, 0, 0, 0);
-                string weekday = date.ToDateTime().ToString("ddd");
-                UIFactory.Text(inner, day.ToString("00") + " " + weekday + (today ? " · TODAY" : ""), 13, TextAnchor.MiddleLeft, today ? UITheme.Green : UITheme.Muted, FontStyle.Bold, 20f);
-                if (athletes.Count == 0)
+                List<CompetitionMeet> meets = Manager.State.CompetitionCalendar.FindAll(m => m.Week != null && m.Week.Year == Manager.State.CurrentWeek.Year && m.Week.Week == week);
+                if (meets.Count == 0) continue;
+                UIFactory.Text(stack, "WEEK " + week.ToString("00") + (week == Manager.State.CurrentWeek.Week ? " · CURRENT" : ""), 14, TextAnchor.MiddleLeft, week == Manager.State.CurrentWeek.Week ? UITheme.Green : UITheme.Muted, FontStyle.Bold, 24f);
+                for (int i = 0; i < meets.Count; i++)
                 {
-                    UIFactory.Text(inner, "Training / recovery day", 12, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Normal, 18f);
-                }
-                else
-                {
-                    for (int i = 0; i < athletes.Count; i++)
-                    {
-                        Athlete athlete = athletes[i];
-                        CompetitionOffer ev = athlete.ScheduledCompetition;
-                        UIFactory.Text(inner, athlete.DisplayName + " — " + ev.Name + " · " + ev.City + " · " + ev.Tier, 12, TextAnchor.MiddleLeft, UITheme.Text, FontStyle.Normal, 22f);
-                    }
+                    CompetitionMeet meet = meets[i];
+                    Image card = UIFactory.FixedPanel(stack, UITheme.Panel, 82f, "CalendarMeet");
+                    Transform inner = UIFactory.Vertical(card.transform, 2f, 9, "Inner");
+                    UIFactory.Stretch(inner.GetComponent<RectTransform>(), 0, 0, 0, 0);
+                    UIFactory.Text(inner, meet.Name + " · " + meet.City, 14, TextAnchor.MiddleLeft, UITheme.Text, FontStyle.Bold, 22f);
+                    UIFactory.Text(inner, DomainLabels.Range(meet.Range) + " · categories " + Categories(meet.AllowedCategories) + " · field " + Mathf.Max(1, meet.FieldStrength - meet.FieldSpread) + "–" + Mathf.Min(99, meet.FieldStrength + meet.FieldSpread), 11, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Normal, 22f);
+                    UIFactory.Text(inner, "100 / 200 / 400 / 800 / 1500m · entry $" + meet.EntryFee, 11, TextAnchor.MiddleLeft, UITheme.Gold, FontStyle.Bold, 20f);
                 }
             }
         }
 
-        private List<Athlete> EventsOnDate(GameDate date)
+        private string Categories(List<AgeCategory> categories)
         {
-            List<Athlete> list = new List<Athlete>();
-            for (int i = 0; i < Manager.State.Roster.Count; i++)
+            if (categories == null || categories.Count == 0) return "—";
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < categories.Count; i++)
             {
-                Athlete athlete = Manager.State.Roster[i];
-                if (athlete.ScheduledCompetition != null && athlete.ScheduledCompetition.Date != null && athlete.ScheduledCompetition.Date.IsSameDay(date))
-                    list.Add(athlete);
+                if (i > 0) sb.Append(", ");
+                sb.Append(categories[i]);
             }
-            return list;
+            return sb.ToString();
         }
     }
 }

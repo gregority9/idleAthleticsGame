@@ -1,127 +1,223 @@
-# Track Dynasty — MVP 0.3
+# Track Dynasty — Weekly Career Redesign
 
 Target Unity Editor: **6000.5.10f1**
 
-MVP 0.3 is the first architectural refactor of the prototype. It removes IMGUI entirely and uses Unity UI (uGUI) with separate domain, systems, core and screen modules.
+This branch is a hard mechanical redesign. It does **not** preserve the old MVP 0.3 save format or its day-by-day / 100 m-only career loop.
 
-## Career loop
+## Career start
 
-- career starts on **1 January 2027**
-- one starting athlete: **Andre Campbell**
-- choose one of three scouts before entering the main game
-- normal **12-month / 365-day calendar** with real day/month/year dates
-- every athlete has an independent training focus, competition offers and scheduled race
-- after each race that athlete receives several new competition choices
-- competition tiers: `Local`, `Regional`, `National`, `International`, `Elite`
-- higher tiers require faster qualifying PBs
-- multiple athletes may race on the same date; the day does not advance until all scheduled races for that date are resolved
-- training is applied on normal days between competitions
-- scout salary is charged monthly
-- yearly progression, aging, decline, retirement and Hall of Fame happen when the calendar rolls into a new year
+- career starts at **Week 01/52, 2026**
+- starting cash: **$5,000**
+- player names their management
+- player chooses **1 of 5 Polish athletes**, all age 8
+- starter athletes begin at a very low level, with visible distance ratings and a hidden exact potential
+- visible potential is shown as an estimate range that narrows over time
+
+## Time model
+
+- one season = **52 weeks**
+- the main action is **Advance to Next Week**
+- weekly processing includes training, fatigue/recovery, staff/sponsor finances and possible inbound applications
+- unresolved competitions in the current week must be completed before advancing
+- after Week 52 the year rolls over, athletes age by one year and a new competition calendar is generated
+
+## Distances
+
+The game now supports:
+
+- 100 m
+- 200 m
+- 400 m
+- 800 m
+- 1500 m
+
+Athletes have base attributes:
+
+- Speed
+- Acceleration
+- Strength
+- Endurance
+- Technique
+- Mental
+
+Each distance rating is derived from those attributes plus a hidden-ish athlete aptitude profile. This suggests specialization without forcing it.
+
+Every distance has its own PB, race count and win count.
+
+## Age categories
+
+- U10: age <= 10
+- U12: 11–12
+- U14: 13–14
+- U16: 15–16
+- U18: 17–18
+- Junior: 19–23
+- Adult: 24–32
+- Senior: 33+
+
+Competition eligibility can restrict age categories independently of distance and competition range.
+
+## Competition model
+
+Competitions are now **global meets**, not per-athlete random offers.
+
+Ranges:
+
+- Local
+- City-wide
+- Regional
+- Country
+- Continent
+- World
+
+A meet stores:
+
+- week
+- city
+- range
+- geographic scope
+- allowed age categories
+- available distances
+- estimated field strength and spread
+- entry fee
+- prize / reputation values
+- championship flag
+
+The athlete screen shows upcoming meets, approximate field level and expected average times. The player chooses which athlete enters which distance.
+
+Country and continent competitions apply geographic eligibility.
+
+## Training
+
+Every athlete has a weekly plan with:
+
+- training distance: 100 / 200 / 400 / 800 / 1500
+- training focus: Speed / Acceleration / Strength / Endurance / Technique / Mental / Recovery
+
+Distance training changes multiple base attributes rather than directly adding points to one distance rating.
+
+Training is affected by:
+
+- age
+- development rate
+- fatigue
+- traits
+- assigned coach, when available
+
+Injuries are possible. Coach specialization can improve training efficiency and reduce injury risk in strong training categories.
+
+## Staff foundation
+
+The data model already contains hooks for:
+
+- coaches
+- strength coaches
+- dietitians
+- physiotherapists
+
+A coach has:
+
+- primary distance
+- two or more secondary distances
+- strong training categories
+- quality
+- athlete capacity
+- weekly salary
+
+Hiring and assignment UI is intentionally left for the next progression layer.
+
+## Auto management
+
+Auto management is prepared but not implemented yet.
+
+It unlocks when the roster reaches **10 athletes**.
 
 ## Recruitment
 
-- three starter scout profiles with different strengths: evaluation accuracy, talent network, or lower scouting/signing costs
-- scouting produces prospects with hidden exact potential and a visible estimate range
-- stronger club reputation improves the general talent pool
-- good race results can trigger **inbound applications** from athletes who want to join the club
-- wins, podiums, PBs, club/world records and higher-tier results increase both application chance and applicant quality
-- applications expire if ignored
+The old starting scout flow has been removed.
 
-## Athlete development
+Athletes can now apply to the management directly. Application frequency and candidate quality improve with:
 
-- Speed, Acceleration, Strength, Technique and Mental
-- Form and Fatigue
-- hidden exact Potential + visible estimated range
-- individual Development Rate
-- age curve and potential-gap based progression
-- training focuses: Sprint, Strength, Technique, Recovery
-- 8 traits with gameplay effects: Explosive Starter, Strong Finisher, Big Stage Performer, Fast Learner, Injury Prone, Late Bloomer, Consistent, Volatile
-- race history and yearly career history
-- PB progression mini-chart
+- management reputation
+- strong race results
+- higher competition range
+- wins, podiums, PBs and club records
+
+Applicants can arrive at many different ages. Early in a career they are mostly Polish/local; stronger international applicants become possible as reputation grows.
+
+## Reputation
+
+Management reputation is the main meta-progression value.
+
+Race results increase reputation, and reputation improves the quality/frequency of future athlete applications and sponsor opportunities.
+
+## Sponsorship
+
+Race performance builds per-athlete sponsor interest.
+
+When interest is high enough, an athlete can receive a sponsor offer containing:
+
+- signing bonus
+- weekly payment
+- win bonus
+- contract duration
+
+Accepted sponsorship contracts generate recurring income.
 
 ## Racing
 
-- 100 m only in MVP 0.3
-- strategy selection: Explosive Start / Balanced / Late Push
-- deterministic race result calculated before presentation
-- continuous movement through 20/40/60/80/100 m split points using continuous interpolation
-- no stopping at split markers
-- photo finish when P1/P2 differ by <= 0.03 s
-- club record and world record tracking
+The race simulator supports all five distances.
 
-### Temporary race presentation
+Strategies:
 
-MVP 0.3 deliberately uses **circular country flags instead of runner sprites**.
+- Fast Start
+- Balanced
+- Late Kick
 
-Every lane has a circular flag marker moving continuously from start to finish. The player's athlete has an additional green outline. The same flag language is used in race prep and the results sheet.
+Longer races are visually accelerated so a 1500 m event does not take several real minutes to watch.
 
-## Full race results
+Results include:
 
-After every competition the game displays the complete 1–8 results table:
-
-- finishing position
-- lane
-- country flag
-- athlete name
+- full 1–8 standings
 - finish time
-- gap to winner
-- PB / CR / WR badges when applicable
-- cash and reputation rewards
+- PB / club record status
+- cash reward
+- reputation reward
+- sponsor-interest gain
 
-After claiming the result, the game returns to that athlete so a new competition can be selected from the newly generated offers.
+## UI
 
-## UI screens
+Main screens:
 
-- Scout Choice
+- Setup / starter choice
 - HQ
 - Team
 - Athlete Detail
-- 12-month Calendar
-- Scout
+- Competition Calendar
 - Applications / Inbox
-- Hall of Fame
 - Race Prep
 - Live Race
-- Full Results
+- Results
 
-## Project structure
+The persistent header shows:
 
-```text
-Assets/Scripts/
-├── Core/
-│   ├── GameManager.cs
-│   └── MvpBootstrap.cs
-├── Domain/
-│   └── DomainModels.cs
-├── Systems/
-│   ├── CompetitionSaveSystems.cs
-│   ├── RaceSimulator.cs
-│   ├── RecruitmentSystems.cs
-│   └── TrainingSystem.cs
-└── UI/
-    ├── AthleteCalendarScreens.cs
-    ├── ClubScreens.cs
-    ├── RaceScreens.cs
-    ├── RecruitScreens.cs
-    ├── UIController.cs
-    └── UIPrimitives.cs
-```
+- management name
+- current week / year
+- cash
+- reputation
+- athlete count
 
 ## Saving
 
-- JSON save file in `Application.persistentDataPath`
-- automatic saves after meaningful career actions
-- development controls for Save / Load / Reset are available from HQ
-- no backend or cloud save yet
+The redesigned career uses a new save file:
+
+`track_dynasty_weekly_v1.json`
+
+Old MVP 0.3 saves are not migrated or loaded.
 
 ## Running
 
 1. Open the repository in Unity **6000.5.10f1**.
 2. Open any scene or create a blank scene.
 3. Press Play.
-4. `MvpBootstrap` creates the game root and runtime UI automatically.
-
-## Packages
-
-The project uses Unity UI (`com.unity.ugui`) plus built-in Input, UI and JSON serialization modules. IMGUI is not used.
+4. `MvpBootstrap` creates the runtime game root and UI automatically.

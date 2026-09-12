@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using TrackDynasty.Mvp03.Domain;
 using UnityEngine;
@@ -7,33 +6,33 @@ namespace TrackDynasty.Mvp03.Systems
 {
     public static class RaceSimulator
     {
-        private static readonly string[] FirstNames = { "Jamal", "Tyrese", "Elijah", "Marcus", "Devonte", "Isaiah", "Caleb", "Noah", "Luca", "Kofi", "Milan", "Mateo", "Joshua", "Liam" };
-        private static readonly string[] LastNames = { "Reid", "Walker", "Brooks", "Lee", "Smith", "Johnson", "Brown", "Schneider", "Romano", "Mensah", "Costa", "Pierre", "Turner", "Cole" };
-        private static readonly string[] Countries = { "USA", "GBR", "CAN", "NGR", "FRA", "GER", "ITA", "JAM", "POL", "BRA" };
+        private static readonly string[] FirstNames = { "Jakub", "Michał", "Antoni", "Noah", "Liam", "Mateo", "Elias", "Lucas", "Kofi", "Sofia", "Maja", "Julia" };
+        private static readonly string[] LastNames = { "Nowak", "Kowalski", "Smith", "Johnson", "Becker", "Martin", "Costa", "Mensah", "Rossi", "Brown" };
+        private static readonly string[] Countries = { "POL", "GER", "FRA", "ITA", "GBR", "USA", "CAN", "NGR", "BRA" };
+        private static readonly string[] EuropeCountries = { "POL", "GER", "FRA", "ITA", "GBR" };
+        private static readonly string[] NorthAmericaCountries = { "USA", "CAN" };
 
-        public static RaceResult Simulate(GameState state, Athlete athlete, CompetitionOffer offer, RaceStrategy strategy)
+        public static RaceResult Simulate(GameState state, Athlete athlete, CompetitionMeet meet, DistanceType distance, RaceStrategy strategy)
         {
+            DistanceRecord record = athlete.GetRecord(distance);
+            float previousClub = state.GetClubRecord(distance);
             RaceResult result = new RaceResult
             {
-                EventName = offer.Name,
-                City = offer.City,
-                Date = new GameDate(offer.Date.Year, offer.Date.Month, offer.Date.Day),
-                Tier = offer.Tier,
-                IsChampionship = offer.IsChampionship,
-                PreviousPersonalBest = athlete.PersonalBest,
-                PreviousClubRecord = state.ClubRecord100m
+                EventName = meet.Name,
+                City = meet.City,
+                Week = new GameWeek(meet.Week.Year, meet.Week.Week),
+                Range = meet.Range,
+                Distance = distance,
+                Category = athlete.Category,
+                IsChampionship = meet.IsChampionship,
+                PreviousPersonalBest = record.PersonalBest,
+                PreviousClubRecord = previousClub
             };
 
-            List<RaceRunner> runners = new List<RaceRunner>();
-            runners.Add(BuildPlayer(athlete, offer, strategy));
-
-            float tierRating = TierRating(offer.Tier);
-            for (int i = 0; i < 7; i++)
-                runners.Add(BuildOpponent(tierRating, offer.IsChampionship));
-
+            List<RaceRunner> runners = new List<RaceRunner> { BuildPlayer(athlete, meet, distance, strategy) };
+            for (int i = 0; i < 7; i++) runners.Add(BuildOpponent(athlete, meet, distance));
             Shuffle(runners);
-            for (int i = 0; i < runners.Count; i++)
-                runners[i].Lane = i + 1;
+            for (int i = 0; i < runners.Count; i++) runners[i].Lane = i + 1;
 
             result.Runners = runners;
             result.Standings = new List<RaceRunner>(runners);
@@ -42,180 +41,147 @@ namespace TrackDynasty.Mvp03.Systems
             RaceRunner player = result.Standings.Find(r => r.IsPlayer);
             result.PlayerPlace = result.Standings.IndexOf(player) + 1;
             result.PlayerTime = player.FinishTime;
-            result.NewPersonalBest = player.FinishTime < athlete.PersonalBest;
-            result.NewClubRecord = player.FinishTime < state.ClubRecord100m;
-            result.NewWorldRecord = player.FinishTime < state.WorldRecord100m;
+            result.NewPersonalBest = !record.HasPersonalBest || player.FinishTime < record.PersonalBest;
+            result.NewClubRecord = previousClub <= 0f || player.FinishTime < previousClub;
+
+            float photoWindow = (int)distance <= 200 ? 0.03f : (int)distance == 400 ? 0.06f : (int)distance == 800 ? 0.12f : 0.20f;
             if (result.Standings.Count >= 2)
-                result.PhotoFinish = Mathf.Abs(result.Standings[0].FinishTime - result.Standings[1].FinishTime) <= 0.03f;
+                result.PhotoFinish = Mathf.Abs(result.Standings[0].FinishTime - result.Standings[1].FinishTime) <= photoWindow;
 
-            int baseCash = offer.CashReward;
-            int baseRep = offer.ReputationReward;
-            float placeMultiplier = result.PlayerPlace == 1 ? 1f : result.PlayerPlace == 2 ? 0.65f : result.PlayerPlace == 3 ? 0.45f : result.PlayerPlace <= 5 ? 0.25f : 0.12f;
-            result.CashReward = Mathf.RoundToInt(baseCash * placeMultiplier);
-            result.ReputationReward = Mathf.RoundToInt(baseRep * placeMultiplier);
-            if (result.NewPersonalBest) result.ReputationReward += 2;
-            if (result.NewClubRecord) result.ReputationReward += 4;
-            if (result.NewWorldRecord) result.ReputationReward += 25;
-
+            float placeMultiplier = result.PlayerPlace == 1 ? 1f : result.PlayerPlace == 2 ? 0.65f : result.PlayerPlace == 3 ? 0.45f : result.PlayerPlace <= 5 ? 0.18f : 0f;
+            result.CashReward = Mathf.RoundToInt(meet.BaseCashReward * placeMultiplier);
+            result.ReputationReward = Mathf.RoundToInt(meet.BaseReputationReward * placeMultiplier);
+            if (result.NewPersonalBest) result.ReputationReward += Mathf.Max(1, (int)meet.Range);
+            if (result.NewClubRecord) result.ReputationReward += Mathf.Max(1, (int)meet.Range + 1);
+            result.SponsorInterestGain = SponsorSystem.InterestGain(result);
             return result;
         }
 
-        private static RaceRunner BuildPlayer(Athlete athlete, CompetitionOffer offer, RaceStrategy strategy)
+        private static RaceRunner BuildPlayer(Athlete athlete, CompetitionMeet meet, DistanceType distance, RaceStrategy strategy)
         {
-            float rating = athlete.BaseRating;
-            float form = Mathf.Lerp(0.95f, 1.05f, Mathf.InverseLerp(0.78f, 1.08f, athlete.Form));
-            float fatigue = 1f - athlete.Fatigue * 0.10f;
+            float rating = athlete.DistanceRating(distance);
+            float form = Mathf.Lerp(0.94f, 1.05f, Mathf.InverseLerp(0.78f, 1.08f, athlete.Form));
+            float fatigue = 1f - athlete.Fatigue * 0.12f;
             rating *= form * fatigue;
 
-            float variance = athlete.HasTrait(TraitType.Consistent) ? 0.025f : athlete.HasTrait(TraitType.Volatile) ? 0.085f : 0.045f;
-            rating += UnityEngine.Random.Range(-variance * 20f, variance * 20f);
+            float variance = athlete.HasTrait(TraitType.Consistent) ? 0.55f : athlete.HasTrait(TraitType.Volatile) ? 2.0f : 1.05f;
+            rating += Random.Range(-variance, variance);
+            if (athlete.HasTrait(TraitType.BigStagePerformer) && meet.IsChampionship) rating += 1.5f;
 
-            if (athlete.HasTrait(TraitType.BigStagePerformer) && offer.IsChampionship)
-                rating += 1.5f;
+            if (strategy == RaceStrategy.FastStart)
+                rating += (int)distance <= 400 ? (athlete.Acceleration - athlete.Endurance) * 0.018f : (athlete.Acceleration - athlete.Endurance) * 0.008f;
+            else if (strategy == RaceStrategy.LateKick)
+                rating += (int)distance >= 400 ? (athlete.Endurance + athlete.Mental - athlete.Acceleration * 1.4f) * 0.012f : (athlete.Speed - athlete.Acceleration) * 0.010f;
 
-            float finishTime = Mathf.Clamp(13.72f - rating * 0.0445f, 9.40f, 13.30f);
-            float[] weights = { 0.286f, 0.188f, 0.177f, 0.174f, 0.175f };
+            if (athlete.HasTrait(TraitType.ExplosiveStarter) && strategy == RaceStrategy.FastStart) rating += 0.8f;
+            if (athlete.HasTrait(TraitType.StrongFinisher) && strategy == RaceStrategy.LateKick) rating += 0.8f;
 
-            if (strategy == RaceStrategy.ExplosiveStart)
-            {
-                weights = new[] { 0.278f, 0.182f, 0.179f, 0.179f, 0.182f };
-                finishTime -= Mathf.Clamp((athlete.Acceleration - athlete.Speed) * 0.0028f, -0.025f, 0.045f);
-            }
-            else if (strategy == RaceStrategy.LatePush)
-            {
-                weights = new[] { 0.295f, 0.193f, 0.178f, 0.170f, 0.164f };
-                finishTime -= Mathf.Clamp((athlete.Speed - athlete.Acceleration) * 0.0028f, -0.025f, 0.045f);
-            }
-
-            if (athlete.HasTrait(TraitType.ExplosiveStarter))
-            {
-                weights[0] -= 0.006f;
-                weights[1] -= 0.002f;
-                weights[4] += 0.008f;
-                finishTime -= 0.015f;
-            }
-            if (athlete.HasTrait(TraitType.StrongFinisher))
-            {
-                weights[0] += 0.006f;
-                weights[4] -= 0.006f;
-                finishTime -= 0.015f;
-            }
-
-            finishTime += UnityEngine.Random.Range(-variance, variance);
-            finishTime = Mathf.Round(finishTime * 100f) / 100f;
-
+            float finishTime = PerformanceModel.EstimateTime(distance, athlete.Age, rating) * Random.Range(0.995f, 1.005f);
+            finishTime = RoundTime(finishTime);
             return new RaceRunner
             {
                 Name = athlete.DisplayName,
                 CountryCode = athlete.CountryCode,
                 IsPlayer = true,
                 FinishTime = finishTime,
-                SplitTimes = BuildSplits(finishTime, weights)
+                SplitTimes = BuildSplits(finishTime, strategy, true)
             };
         }
 
-        private static RaceRunner BuildOpponent(float tierRating, bool championship)
+        private static RaceRunner BuildOpponent(Athlete athlete, CompetitionMeet meet, DistanceType distance)
         {
-            float rating = tierRating + UnityEngine.Random.Range(-4.5f, 4.5f) + (championship ? 1.2f : 0f);
-            float finishTime = Mathf.Clamp(13.72f - rating * 0.0445f + UnityEngine.Random.Range(-0.06f, 0.06f), 9.42f, 13.35f);
-            finishTime = Mathf.Round(finishTime * 100f) / 100f;
-            float bias = UnityEngine.Random.Range(-0.012f, 0.012f);
-            float[] weights =
-            {
-                0.286f + bias,
-                0.188f + bias * 0.35f,
-                0.177f,
-                0.174f - bias * 0.45f,
-                0.175f - bias * 0.90f
-            };
-
+            float rating = meet.FieldStrength + Random.Range(-meet.FieldSpread, meet.FieldSpread + 1);
+            if (meet.IsChampionship) rating += Random.Range(0f, 2.5f);
+            float finishTime = PerformanceModel.EstimateTime(distance, athlete.Age, rating) * Random.Range(0.994f, 1.006f);
+            finishTime = RoundTime(finishTime);
+            RaceStrategy style = (RaceStrategy)Random.Range(0, 3);
             return new RaceRunner
             {
-                Name = FirstNames[UnityEngine.Random.Range(0, FirstNames.Length)] + " " + LastNames[UnityEngine.Random.Range(0, LastNames.Length)],
-                CountryCode = Countries[UnityEngine.Random.Range(0, Countries.Length)],
+                Name = FirstNames[Random.Range(0, FirstNames.Length)] + " " + LastNames[Random.Range(0, LastNames.Length)],
+                CountryCode = OpponentCountry(meet),
                 IsPlayer = false,
                 FinishTime = finishTime,
-                SplitTimes = BuildSplits(finishTime, weights)
+                SplitTimes = BuildSplits(finishTime, style, false)
             };
         }
 
-        private static float[] BuildSplits(float finishTime, float[] weights)
+        private static string OpponentCountry(CompetitionMeet meet)
         {
-            float sum = 0f;
-            for (int i = 0; i < weights.Length; i++) sum += weights[i];
+            if (meet.Range == CompetitionRange.Country && !string.IsNullOrEmpty(meet.CountryCode)) return meet.CountryCode;
+            if (meet.Range == CompetitionRange.Continent)
+            {
+                if (meet.Continent == "Europe") return EuropeCountries[Random.Range(0, EuropeCountries.Length)];
+                if (meet.Continent == "North America") return NorthAmericaCountries[Random.Range(0, NorthAmericaCountries.Length)];
+                if (meet.Continent == "South America") return "BRA";
+                if (meet.Continent == "Africa") return "NGR";
+            }
+            if ((int)meet.Range <= (int)CompetitionRange.Regional) return "POL";
+            return Countries[Random.Range(0, Countries.Length)];
+        }
+
+        private static float RoundTime(float time) => Mathf.Round(time * 100f) / 100f;
+
+        private static float[] BuildSplits(float finishTime, RaceStrategy strategy, bool player)
+        {
+            float[] weights = { 0.22f, 0.20f, 0.195f, 0.192f, 0.193f };
+            if (strategy == RaceStrategy.FastStart) weights = new[] { 0.205f, 0.195f, 0.198f, 0.200f, 0.202f };
+            if (strategy == RaceStrategy.LateKick) weights = new[] { 0.225f, 0.205f, 0.198f, 0.190f, 0.182f };
+            if (!player)
+            {
+                float bias = Random.Range(-0.008f, 0.008f);
+                weights[0] += bias;
+                weights[4] -= bias;
+            }
+
+            float total = 0f;
+            for (int i = 0; i < weights.Length; i++) total += weights[i];
             float cumulative = 0f;
             float[] splits = new float[5];
-            for (int i = 0; i < 5; i++)
+            for (int i = 0; i < weights.Length; i++)
             {
-                cumulative += finishTime * (weights[i] / sum);
+                cumulative += finishTime * weights[i] / total;
                 splits[i] = cumulative;
             }
             splits[4] = finishTime;
             return splits;
         }
 
-        private static float TierRating(CompetitionTier tier)
+        public static float DistanceAtTime(RaceRunner runner, DistanceType distance, float time)
         {
-            switch (tier)
+            if (runner == null || runner.SplitTimes == null || runner.SplitTimes.Length < 5) return 0f;
+            float totalDistance = (float)(int)distance;
+            if (time <= 0f) return 0f;
+            if (time >= runner.FinishTime) return totalDistance;
+
+            float segmentDistance = totalDistance / 5f;
+            float previousTime = 0f;
+            float previousDistance = 0f;
+            for (int i = 0; i < 5; i++)
             {
-                case CompetitionTier.Local: return 62f;
-                case CompetitionTier.Regional: return 69f;
-                case CompetitionTier.National: return 76f;
-                case CompetitionTier.International: return 83f;
-                case CompetitionTier.Elite: return 89f;
-                default: return 68f;
+                float nextTime = runner.SplitTimes[i];
+                float nextDistance = segmentDistance * (i + 1);
+                if (time <= nextTime)
+                {
+                    float t = Mathf.InverseLerp(previousTime, nextTime, time);
+                    return Mathf.Lerp(previousDistance, nextDistance, Smooth(t));
+                }
+                previousTime = nextTime;
+                previousDistance = nextDistance;
             }
+            return totalDistance;
         }
+
+        private static float Smooth(float t) => t * t * (3f - 2f * t);
 
         private static void Shuffle<T>(List<T> list)
         {
             for (int i = list.Count - 1; i > 0; i--)
             {
-                int j = UnityEngine.Random.Range(0, i + 1);
-                T temp = list[i];
+                int j = Random.Range(0, i + 1);
+                T tmp = list[i];
                 list[i] = list[j];
-                list[j] = temp;
+                list[j] = tmp;
             }
-        }
-
-        public static float DistanceAtTime(RaceRunner runner, float time)
-        {
-            if (runner == null || runner.SplitTimes == null || runner.SplitTimes.Length < 5) return 0f;
-            if (time <= 0f) return 0f;
-            if (time >= runner.FinishTime) return 100f;
-
-            float[] times = new float[6];
-            float[] distances = { 0f, 20f, 40f, 60f, 80f, 100f };
-            times[0] = 0f;
-            for (int i = 0; i < 5; i++) times[i + 1] = runner.SplitTimes[i];
-
-            float[] tangents = new float[6];
-            tangents[0] = 20f / Mathf.Max(0.001f, times[1] - times[0]);
-            tangents[5] = 20f / Mathf.Max(0.001f, times[5] - times[4]);
-            for (int i = 1; i < 5; i++)
-            {
-                float before = 20f / Mathf.Max(0.001f, times[i] - times[i - 1]);
-                float after = 20f / Mathf.Max(0.001f, times[i + 1] - times[i]);
-                tangents[i] = (before + after) * 0.5f;
-            }
-
-            for (int segment = 0; segment < 5; segment++)
-            {
-                if (time <= times[segment + 1])
-                {
-                    float duration = Mathf.Max(0.001f, times[segment + 1] - times[segment]);
-                    float t = Mathf.Clamp01((time - times[segment]) / duration);
-                    return Hermite(distances[segment], distances[segment + 1], tangents[segment] * duration, tangents[segment + 1] * duration, t);
-                }
-            }
-            return 100f;
-        }
-
-        private static float Hermite(float p0, float p1, float m0, float m1, float t)
-        {
-            float t2 = t * t;
-            float t3 = t2 * t;
-            return (2f * t3 - 3f * t2 + 1f) * p0 + (t3 - 2f * t2 + t) * m0 + (-2f * t3 + 3f * t2) * p1 + (t3 - t2) * m1;
         }
     }
 }

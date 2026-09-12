@@ -12,7 +12,8 @@ namespace TrackDynasty.Mvp03.Core
         public static GameManager Instance { get; private set; }
         public GameState State { get; private set; }
         public Athlete ActiveAthlete { get; private set; }
-        public CompetitionOffer ActiveCompetition { get; private set; }
+        public CompetitionMeet ActiveCompetition { get; private set; }
+        public DistanceType ActiveDistance { get; private set; } = DistanceType.M100;
         public RaceStrategy ActiveStrategy { get; set; } = RaceStrategy.Balanced;
         public RaceResult CurrentRaceResult { get; private set; }
         public MainUIController UI { get; private set; }
@@ -26,7 +27,6 @@ namespace TrackDynasty.Mvp03.Core
                 Destroy(gameObject);
                 return;
             }
-
             Instance = this;
             DontDestroyOnLoad(gameObject);
             LoadOrCreate();
@@ -40,69 +40,39 @@ namespace TrackDynasty.Mvp03.Core
 
         public void LoadOrCreate()
         {
-            State = SaveSystem.Load();
-            if (State == null || State.Roster == null || State.Roster.Count == 0)
-                State = CreateNewState();
-            NormalizeState();
+            State = SaveSystem.Load() ?? CreateNewState();
             ActiveAthlete = GetSelectedAthlete();
         }
 
         public GameState CreateNewState()
         {
-            GameState state = new GameState
+            return new GameState
             {
-                CurrentDate = new GameDate(2027, 1, 1),
-                Cash = 6200,
-                Reputation = 120,
-                ClubRecord100m = 10.72f,
-                ClubRecordHolder = "Andre Campbell",
-                WorldRecord100m = 9.58f,
-                StartingScoutChoices = ScoutSystem.CreateStartingChoices()
+                SaveVersion = 4,
+                SetupCompleted = false,
+                CurrentWeek = new GameWeek(2026, 1),
+                Cash = 5000,
+                Management = new ManagementProfile { Name = "My Athletics Management", Reputation = 0 },
+                StarterChoices = AthleteGenerator.CreateStarterChoices(),
+                CompetitionCalendar = CompetitionSystem.GenerateSeason(2026)
             };
-            Athlete starter = AthleteGenerator.CreateStarterAthlete();
-            state.Roster.Add(starter);
-            state.SelectedAthleteId = starter.Id;
-            CompetitionSystem.EnsureOffers(starter, state.CurrentDate, state.Reputation);
-            return state;
         }
 
-        private void NormalizeState()
+        public bool CompleteSetup(string managementName, AthleteCandidate candidate)
         {
-            if (State.CurrentDate == null) State.CurrentDate = new GameDate(2027, 1, 1);
-            if (State.Roster == null) State.Roster = new List<Athlete>();
-            if (State.ScoutedProspects == null) State.ScoutedProspects = new List<Prospect>();
-            if (State.Applications == null) State.Applications = new List<ClubApplication>();
-            if (State.HallOfFame == null) State.HallOfFame = new List<HallOfFameEntry>();
-            if (State.StartingScoutChoices == null || State.StartingScoutChoices.Count == 0)
-                State.StartingScoutChoices = ScoutSystem.CreateStartingChoices();
+            if (State.SetupCompleted || candidate == null) return false;
+            string cleanName = string.IsNullOrWhiteSpace(managementName) ? "My Athletics Management" : managementName.Trim();
+            if (cleanName.Length > 32) cleanName = cleanName.Substring(0, 32);
 
-            for (int i = 0; i < State.Roster.Count; i++)
-            {
-                Athlete athlete = State.Roster[i];
-                if (athlete.CompetitionOffers == null) athlete.CompetitionOffers = new List<CompetitionOffer>();
-                if (athlete.Traits == null) athlete.Traits = new List<TraitType>();
-                if (athlete.RaceHistory == null) athlete.RaceHistory = new List<RaceHistoryEntry>();
-                if (athlete.SeasonHistory == null) athlete.SeasonHistory = new List<SeasonHistoryEntry>();
-                CompetitionSystem.EnsureOffers(athlete, State.CurrentDate, State.Reputation);
-            }
-        }
-
-        public void ChooseScout(ScoutProfile scout)
-        {
-            if (scout == null) return;
-            State.ChosenScout = scout;
-            State.StartingScoutChoices.Clear();
-            RefreshScouting(true);
-            SaveAndNotify();
-        }
-
-        public void SelectAthlete(Athlete athlete)
-        {
-            if (athlete == null) return;
-            ActiveAthlete = athlete;
+            Athlete athlete = candidate.ToAthlete();
+            State.Management.Name = cleanName;
+            State.Roster.Add(athlete);
             State.SelectedAthleteId = athlete.Id;
-            CompetitionSystem.EnsureOffers(athlete, State.CurrentDate, State.Reputation);
-            Notify();
+            State.StarterChoices.Clear();
+            State.SetupCompleted = true;
+            ActiveAthlete = athlete;
+            SaveAndNotify();
+            return true;
         }
 
         public Athlete GetSelectedAthlete()
@@ -112,198 +82,223 @@ namespace TrackDynasty.Mvp03.Core
             return athlete ?? State.Roster[0];
         }
 
-        public void SetTraining(Athlete athlete, TrainingFocus focus)
+        public void SelectAthlete(Athlete athlete)
+        {
+            if (athlete == null) return;
+            ActiveAthlete = athlete;
+            State.SelectedAthleteId = athlete.Id;
+            Notify();
+        }
+
+        public void SetTrainingDistance(Athlete athlete, DistanceType distance)
+        {
+            if (athlete == null) return;
+            athlete.TrainingDistance = distance;
+            SaveAndNotify();
+        }
+
+        public void SetTrainingFocus(Athlete athlete, TrainingFocus focus)
         {
             if (athlete == null) return;
             athlete.TrainingFocus = focus;
             SaveAndNotify();
         }
 
-        public bool ScheduleCompetition(Athlete athlete, CompetitionOffer offer)
+        public CoachProfile GetCoach(Athlete athlete)
         {
-            if (athlete == null || offer == null) return false;
-            if (!CompetitionSystem.CanEnter(athlete, offer)) return false;
-            if (offer.Date == null || offer.Date.CompareTo(State.CurrentDate) <= 0) return false;
-            athlete.ScheduledCompetition = offer;
-            athlete.CompetitionOffers.Clear();
+            if (athlete == null || string.IsNullOrEmpty(athlete.AssignedCoachId) || State.Coaches == null) return null;
+            return State.Coaches.Find(c => c.Id == athlete.AssignedCoachId);
+        }
+
+        public bool ScheduleCompetition(Athlete athlete, CompetitionMeet meet, DistanceType distance)
+        {
+            if (athlete == null || meet == null || meet.Week == null) return false;
+            if (athlete.ScheduledCompetition != null) return false;
+            if (meet.Week.CompareTo(State.CurrentWeek) < 0) return false;
+            if (!CompetitionSystem.CanEnter(athlete, meet, distance)) return false;
+            if (State.Cash < meet.EntryFee) return false;
+
+            State.Cash -= meet.EntryFee;
+            athlete.ScheduledCompetition = new ScheduledCompetition { MeetId = meet.Id, Distance = distance };
             SaveAndNotify();
             return true;
         }
 
-        public List<Athlete> AthletesRacingToday()
+        public void CancelScheduledCompetition(Athlete athlete)
         {
-            List<Athlete> list = new List<Athlete>();
+            if (athlete == null || athlete.ScheduledCompetition == null) return;
+            athlete.ScheduledCompetition = null;
+            SaveAndNotify();
+        }
+
+        public CompetitionMeet ScheduledMeet(Athlete athlete)
+        {
+            if (athlete == null || athlete.ScheduledCompetition == null) return null;
+            return CompetitionSystem.FindMeet(State, athlete.ScheduledCompetition.MeetId);
+        }
+
+        public List<Athlete> AthletesRacingThisWeek()
+        {
+            List<Athlete> result = new List<Athlete>();
+            if (State.Roster == null) return result;
             for (int i = 0; i < State.Roster.Count; i++)
             {
                 Athlete athlete = State.Roster[i];
-                if (athlete.ScheduledCompetition != null && athlete.ScheduledCompetition.Date != null && athlete.ScheduledCompetition.Date.IsSameDay(State.CurrentDate))
-                    list.Add(athlete);
+                CompetitionMeet meet = ScheduledMeet(athlete);
+                if (meet != null && meet.Week.IsSame(State.CurrentWeek)) result.Add(athlete);
             }
-            return list;
+            return result;
         }
 
-        public bool CanAdvanceDate()
-        {
-            return AthletesRacingToday().Count == 0;
-        }
+        public bool CanAdvanceWeek() => AthletesRacingThisWeek().Count == 0;
 
-        public void AdvanceOneDay()
+        public void AdvanceOneWeek()
         {
-            if (!CanAdvanceDate()) return;
-            AdvanceDaysInternal(1);
+            if (!State.SetupCompleted || !CanAdvanceWeek()) return;
+
+            for (int i = 0; i < State.Roster.Count; i++)
+                TrainingSystem.ApplyTrainingWeek(State.Roster[i], GetCoach(State.Roster[i]));
+
+            ApplyWeeklyFinances();
+            ClubApplication weeklyApplication = ApplicationSystem.MaybeGenerateWeekly(State);
+            if (weeklyApplication != null) State.Applications.Add(weeklyApplication);
+
+            int previousYear = State.CurrentWeek.Year;
+            State.CurrentWeek = State.CurrentWeek.AddWeeks(1);
+            if (State.CurrentWeek.Year != previousYear) ApplyYearRollover();
+
+            ApplicationSystem.RemoveExpired(State);
+            RemoveExpiredScheduledCompetitions();
             SaveAndNotify();
         }
 
-        public void AdvanceToNextCompetition()
+        private void ApplyWeeklyFinances()
         {
-            if (!CanAdvanceDate()) return;
-            GameDate next = FindNextScheduledDate();
-            if (next == null)
-            {
-                AdvanceDaysInternal(1);
-                SaveAndNotify();
-                return;
-            }
+            int staffCost = 0;
+            for (int i = 0; i < State.Coaches.Count; i++) staffCost += State.Coaches[i].WeeklySalary;
+            for (int i = 0; i < State.Staff.Count; i++) staffCost += State.Staff[i].WeeklySalary;
+            State.Cash -= staffCost;
 
-            int safety = 0;
-            while (State.CurrentDate.CompareTo(next) < 0 && safety < 400)
+            for (int i = State.SponsorContracts.Count - 1; i >= 0; i--)
             {
-                AdvanceDaysInternal(1);
-                safety++;
+                SponsorContract contract = State.SponsorContracts[i];
+                State.Cash += contract.WeeklyPayment;
+                contract.WeeksRemaining--;
+                if (contract.WeeksRemaining <= 0) State.SponsorContracts.RemoveAt(i);
             }
-            SaveAndNotify();
         }
 
-        private GameDate FindNextScheduledDate()
+        private void ApplyYearRollover()
         {
-            GameDate best = null;
+            for (int i = 0; i < State.Roster.Count; i++) TrainingSystem.ApplyYearRollover(State.Roster[i]);
+            State.CompetitionCalendar = CompetitionSystem.GenerateSeason(State.CurrentWeek.Year);
+        }
+
+        private void RemoveExpiredScheduledCompetitions()
+        {
             for (int i = 0; i < State.Roster.Count; i++)
             {
-                CompetitionOffer offer = State.Roster[i].ScheduledCompetition;
-                if (offer == null || offer.Date == null) continue;
-                if (offer.Date.CompareTo(State.CurrentDate) < 0) continue;
-                if (best == null || offer.Date.CompareTo(best) < 0)
-                    best = offer.Date;
-            }
-            return best;
-        }
-
-        private void AdvanceDaysInternal(int days)
-        {
-            for (int d = 0; d < days; d++)
-            {
-                DateTime before = State.CurrentDate.ToDateTime();
-                for (int i = 0; i < State.Roster.Count; i++)
-                    TrainingSystem.ApplyTrainingDay(State.Roster[i]);
-
-                State.CurrentDate = State.CurrentDate.AddDays(1);
-                DateTime after = State.CurrentDate.ToDateTime();
-
-                if (before.Month != after.Month)
-                    ApplyMonthlyCosts();
-                if (before.Year != after.Year)
-                    ApplyYearRollover(before.Year);
-
-                ApplicationSystem.RemoveExpired(State);
-            }
-        }
-
-        private void ApplyMonthlyCosts()
-        {
-            if (State.ChosenScout != null)
-                State.Cash -= State.ChosenScout.MonthlySalary;
-        }
-
-        private void ApplyYearRollover(int completedYear)
-        {
-            for (int i = State.Roster.Count - 1; i >= 0; i--)
-            {
                 Athlete athlete = State.Roster[i];
-                int yearRaces = 0;
-                int yearWins = 0;
-                int yearTitles = 0;
-                for (int r = 0; r < athlete.RaceHistory.Count; r++)
-                {
-                    RaceHistoryEntry entry = athlete.RaceHistory[r];
-                    if (entry.Year != completedYear) continue;
-                    yearRaces++;
-                    if (entry.Place == 1) yearWins++;
-                    if (entry.Place == 1 && entry.Tier >= CompetitionTier.National) yearTitles++;
-                }
-
-                athlete.SeasonHistory.Add(new SeasonHistoryEntry
-                {
-                    Year = completedYear,
-                    StartAge = athlete.Age,
-                    EndAge = athlete.Age + 1,
-                    PbAtStart = athlete.YearStartPersonalBest,
-                    PbAtEnd = athlete.PersonalBest,
-                    Races = yearRaces,
-                    Wins = yearWins,
-                    Championships = yearTitles
-                });
-
-                athlete.YearStartPersonalBest = athlete.PersonalBest;
-                TrainingSystem.ApplyYearRollover(athlete);
-                bool retires = athlete.Age >= 36 || (athlete.Age >= 33 && UnityEngine.Random.value < 0.20f);
-                if (retires)
-                {
-                    State.HallOfFame.Insert(0, new HallOfFameEntry
-                    {
-                        Name = athlete.DisplayName,
-                        CountryCode = athlete.CountryCode,
-                        RetireAge = athlete.Age,
-                        Races = athlete.Races,
-                        Wins = athlete.Wins,
-                        Championships = athlete.Championships,
-                        PersonalBest = athlete.PersonalBest
-                    });
-                    State.Roster.RemoveAt(i);
-                }
-                else
-                {
-                    athlete.CompetitionOffers.Clear();
-                    if (athlete.ScheduledCompetition != null && athlete.ScheduledCompetition.Date != null && athlete.ScheduledCompetition.Date.CompareTo(State.CurrentDate) < 0)
-                        athlete.ScheduledCompetition = null;
-                    CompetitionSystem.EnsureOffers(athlete, State.CurrentDate, State.Reputation);
-                }
+                CompetitionMeet meet = ScheduledMeet(athlete);
+                if (meet != null && meet.Week.CompareTo(State.CurrentWeek) < 0) athlete.ScheduledCompetition = null;
             }
+        }
 
-            if (State.Roster.Count == 0)
+        public List<CompetitionMeet> UpcomingMeets(Athlete athlete, int maxCount = 8)
+        {
+            List<CompetitionMeet> result = new List<CompetitionMeet>();
+            if (athlete == null || State.CompetitionCalendar == null) return result;
+            for (int i = 0; i < State.CompetitionCalendar.Count; i++)
             {
-                Prospect emergency = AthleteGenerator.GenerateApplicant(8, State.Reputation, State.ChosenScout);
-                Athlete athlete = AthleteGenerator.FromProspect(emergency);
-                State.Roster.Add(athlete);
-                State.SelectedAthleteId = athlete.Id;
+                CompetitionMeet meet = State.CompetitionCalendar[i];
+                if (meet.Week.CompareTo(State.CurrentWeek) < 0) continue;
+                if (meet.AllowedCategories != null && meet.AllowedCategories.Contains(athlete.Category)) result.Add(meet);
+                if (result.Count >= maxCount) break;
             }
-            ActiveAthlete = GetSelectedAthlete();
+            return result;
         }
 
-        public bool RefreshScouting(bool free = false)
+        public void PrepareRace(Athlete athlete)
         {
-            if (State.ChosenScout == null) return false;
-            int cost = ScoutSystem.RefreshCost(State.ChosenScout);
-            if (!free && State.Cash < cost) return false;
-            if (!free) State.Cash -= cost;
-            State.ScoutedProspects.Clear();
-            for (int i = 0; i < 3; i++)
-                State.ScoutedProspects.Add(AthleteGenerator.GenerateScoutedProspect(State.ChosenScout, State.Reputation));
+            if (athlete == null || athlete.ScheduledCompetition == null) return;
+            CompetitionMeet meet = ScheduledMeet(athlete);
+            if (meet == null || !meet.Week.IsSame(State.CurrentWeek)) return;
+            ActiveAthlete = athlete;
+            ActiveCompetition = meet;
+            ActiveDistance = athlete.ScheduledCompetition.Distance;
+            ActiveStrategy = RaceStrategy.Balanced;
+            CurrentRaceResult = null;
+            State.SelectedAthleteId = athlete.Id;
+            Notify();
+        }
+
+        public void StartRace()
+        {
+            if (ActiveAthlete == null || ActiveCompetition == null) return;
+            CurrentRaceResult = RaceSimulator.Simulate(State, ActiveAthlete, ActiveCompetition, ActiveDistance, ActiveStrategy);
+            Notify();
+        }
+
+        public void ClaimRaceResult()
+        {
+            if (CurrentRaceResult == null || ActiveAthlete == null || ActiveCompetition == null) return;
+            RaceResult result = CurrentRaceResult;
+            Athlete athlete = ActiveAthlete;
+            DistanceRecord record = athlete.GetRecord(result.Distance);
+
+            athlete.CareerRaces++;
+            record.Races++;
+            if (result.PlayerPlace == 1)
+            {
+                athlete.CareerWins++;
+                record.Wins++;
+            }
+            if (result.NewPersonalBest) record.PersonalBest = result.PlayerTime;
+            if (result.NewClubRecord) State.SetClubRecord(result.Distance, result.PlayerTime, athlete.DisplayName);
+
+            athlete.Fatigue = Mathf.Clamp01(athlete.Fatigue + ((int)result.Distance >= 800 ? 0.16f : 0.10f));
+            athlete.Form = Mathf.Clamp(athlete.Form + UnityEngine.Random.Range(-0.012f, 0.016f), 0.78f, 1.08f);
+            athlete.SponsorInterest += result.SponsorInterestGain;
+            State.Cash += result.CashReward;
+            State.Management.Reputation += result.ReputationReward;
+
+            SponsorContract contract = State.SponsorContracts.Find(c => c.AthleteId == athlete.Id);
+            if (contract != null && result.PlayerPlace == 1) State.Cash += contract.WinBonus;
+
+            athlete.RaceHistory.Add(new RaceHistoryEntry
+            {
+                Year = State.CurrentWeek.Year,
+                Week = State.CurrentWeek.Week,
+                EventName = result.EventName,
+                Range = result.Range,
+                Distance = result.Distance,
+                Place = result.PlayerPlace,
+                Time = result.PlayerTime,
+                PersonalBest = result.NewPersonalBest,
+                ClubRecord = result.NewClubRecord
+            });
+
+            ClubApplication application = ApplicationSystem.MaybeGenerateAfterRace(State, athlete, result);
+            if (application != null) State.Applications.Add(application);
+            SponsorOffer offer = SponsorSystem.MaybeCreateOffer(State, athlete);
+            if (offer != null) State.SponsorOffers.Add(offer);
+
+            athlete.ScheduledCompetition = null;
+            CurrentRaceResult = null;
+            ActiveCompetition = null;
             SaveAndNotify();
-            return true;
         }
 
-        public bool SignProspect(Prospect prospect, bool fromApplication = false)
+        public bool SignApplication(ClubApplication application)
         {
-            if (prospect == null || State.Roster.Count >= 8) return false;
-            if (State.Cash < prospect.SigningFee) return false;
-            State.Cash -= prospect.SigningFee;
-            Athlete athlete = AthleteGenerator.FromProspect(prospect);
+            if (application == null || application.Candidate == null) return false;
+            if (State.Cash < application.Candidate.SigningFee) return false;
+            if (State.Roster.Count >= 25) return false;
+
+            State.Cash -= application.Candidate.SigningFee;
+            Athlete athlete = application.Candidate.ToAthlete();
             State.Roster.Add(athlete);
-            CompetitionSystem.EnsureOffers(athlete, State.CurrentDate, State.Reputation);
-            if (fromApplication)
-                State.Applications.RemoveAll(a => a.Prospect != null && a.Prospect.Id == prospect.Id);
-            else
-                State.ScoutedProspects.RemoveAll(p => p.Id == prospect.Id);
+            State.Applications.Remove(application);
             SaveAndNotify();
             return true;
         }
@@ -315,72 +310,24 @@ namespace TrackDynasty.Mvp03.Core
             SaveAndNotify();
         }
 
-        public void PrepareRace(Athlete athlete)
+        public bool AcceptSponsorOffer(SponsorOffer offer)
         {
-            if (athlete == null || athlete.ScheduledCompetition == null) return;
-            if (athlete.ScheduledCompetition.Date == null || !athlete.ScheduledCompetition.Date.IsSameDay(State.CurrentDate)) return;
-            ActiveAthlete = athlete;
-            ActiveCompetition = athlete.ScheduledCompetition;
-            ActiveStrategy = RaceStrategy.Balanced;
-            CurrentRaceResult = null;
-            State.SelectedAthleteId = athlete.Id;
-            Notify();
-        }
+            if (offer == null || State.SponsorOffers == null || !State.SponsorOffers.Contains(offer)) return false;
+            if (State.SponsorContracts.Exists(c => c.AthleteId == offer.AthleteId)) return false;
 
-        public void StartRace()
-        {
-            if (ActiveAthlete == null || ActiveCompetition == null) return;
-            CurrentRaceResult = RaceSimulator.Simulate(State, ActiveAthlete, ActiveCompetition, ActiveStrategy);
-            Notify();
-        }
-
-        public void ClaimRaceResult()
-        {
-            if (CurrentRaceResult == null || ActiveAthlete == null || ActiveCompetition == null) return;
-
-            RaceResult result = CurrentRaceResult;
-            Athlete athlete = ActiveAthlete;
-            athlete.Races++;
-            if (result.PlayerPlace == 1) athlete.Wins++;
-            if (result.PlayerPlace == 1 && result.IsChampionship) athlete.Championships++;
-            if (result.NewPersonalBest) athlete.PersonalBest = result.PlayerTime;
-            if (result.NewClubRecord)
+            State.Cash += offer.SigningBonus;
+            State.SponsorContracts.Add(new SponsorContract
             {
-                State.ClubRecord100m = result.PlayerTime;
-                State.ClubRecordHolder = athlete.DisplayName;
-            }
-            if (result.NewWorldRecord)
-                State.WorldRecord100m = result.PlayerTime;
-
-            athlete.Fatigue = Mathf.Clamp01(athlete.Fatigue + 0.10f);
-            athlete.Form = Mathf.Clamp(athlete.Form + UnityEngine.Random.Range(-0.015f, 0.018f), 0.78f, 1.08f);
-            State.Cash += result.CashReward;
-            State.Reputation += result.ReputationReward;
-
-            athlete.RaceHistory.Add(new RaceHistoryEntry
-            {
-                Year = State.CurrentDate.Year,
-                Month = State.CurrentDate.Month,
-                Day = State.CurrentDate.Day,
-                EventName = result.EventName,
-                Tier = result.Tier,
-                Place = result.PlayerPlace,
-                Time = result.PlayerTime,
-                PersonalBest = result.NewPersonalBest,
-                ClubRecord = result.NewClubRecord,
-                WorldRecord = result.NewWorldRecord
+                Id = offer.Id,
+                AthleteId = offer.AthleteId,
+                BrandName = offer.BrandName,
+                WeeklyPayment = offer.WeeklyPayment,
+                WinBonus = offer.WinBonus,
+                WeeksRemaining = offer.DurationWeeks
             });
-
-            ClubApplication application = ApplicationSystem.MaybeGenerate(State, athlete, result);
-            if (application != null)
-                State.Applications.Add(application);
-
-            athlete.ScheduledCompetition = null;
-            athlete.CompetitionOffers = CompetitionSystem.GenerateOffers(athlete, State.CurrentDate, State.Reputation);
-
-            CurrentRaceResult = null;
-            ActiveCompetition = null;
+            State.SponsorOffers.Remove(offer);
             SaveAndNotify();
+            return true;
         }
 
         public void SaveGame()
@@ -394,7 +341,6 @@ namespace TrackDynasty.Mvp03.Core
             GameState loaded = SaveSystem.Load();
             if (loaded == null) return;
             State = loaded;
-            NormalizeState();
             ActiveAthlete = GetSelectedAthlete();
             ActiveCompetition = null;
             CurrentRaceResult = null;
@@ -405,8 +351,7 @@ namespace TrackDynasty.Mvp03.Core
         {
             SaveSystem.Delete();
             State = CreateNewState();
-            NormalizeState();
-            ActiveAthlete = GetSelectedAthlete();
+            ActiveAthlete = null;
             ActiveCompetition = null;
             CurrentRaceResult = null;
             SaveSystem.Save(State);
@@ -419,9 +364,6 @@ namespace TrackDynasty.Mvp03.Core
             Notify();
         }
 
-        private void Notify()
-        {
-            StateChanged?.Invoke();
-        }
+        private void Notify() => StateChanged?.Invoke();
     }
 }

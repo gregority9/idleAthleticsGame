@@ -1,10 +1,9 @@
+using System.Collections.Generic;
+using System.Text;
 using TrackDynasty.Mvp03.Domain;
+using TrackDynasty.Mvp03.Systems;
 using UnityEngine;
 using UnityEngine.UI;
-using System.Collections.Generic;
-using TrackDynasty.Mvp03.Systems;
-using System;
-using System.Text;
 
 namespace TrackDynasty.Mvp03.UI.Screens
 {
@@ -15,7 +14,7 @@ namespace TrackDynasty.Mvp03.UI.Screens
         protected override void Build()
         {
             Athlete athlete = Manager.ActiveAthlete;
-            CompetitionOffer competition = Manager.ActiveCompetition;
+            CompetitionMeet competition = Manager.ActiveCompetition;
             if (athlete == null || competition == null)
             {
                 UIFactory.Text(Content, "No race selected.", 20, TextAnchor.MiddleCenter, UITheme.Muted, FontStyle.Bold, 60f);
@@ -23,46 +22,49 @@ namespace TrackDynasty.Mvp03.UI.Screens
                 return;
             }
 
+            DistanceType distance = Manager.ActiveDistance;
             ScrollRect scroll;
             Transform stack = UIFactory.ScrollContent(Content, out scroll, 20);
             UIFactory.Button(stack, "‹ BACK", () => Controller.Navigate(ScreenId.HQ), UITheme.PanelAlt, 38f);
-            UIFactory.Text(stack, "RACE PREP", 30, TextAnchor.MiddleCenter, UITheme.Text, FontStyle.Bold, 48f);
-            UIFactory.Text(stack, competition.Name.ToUpperInvariant(), 22, TextAnchor.MiddleCenter, UITheme.Gold, FontStyle.Bold, 38f);
-            UIFactory.Text(stack, competition.Date.LongLabel + " · " + competition.City + " · " + competition.Tier, 14, TextAnchor.MiddleCenter, UITheme.Muted, FontStyle.Normal, 30f);
+            UIFactory.Text(stack, DomainLabels.Distance(distance) + " · RACE PREP", 30, TextAnchor.MiddleCenter, UITheme.Text, FontStyle.Bold, 48f);
+            UIFactory.Text(stack, competition.Name.ToUpperInvariant(), 21, TextAnchor.MiddleCenter, UITheme.Gold, FontStyle.Bold, 36f);
+            UIFactory.Text(stack, competition.Week.ShortLabel + " · " + competition.City + " · " + DomainLabels.Range(competition.Range) + " · " + athlete.Category, 13, TextAnchor.MiddleCenter, UITheme.Muted, FontStyle.Normal, 28f);
 
-            Image athleteCard = UIFactory.FixedPanel(stack, UITheme.Panel, 100f, "AthleteCard");
-            Transform row = UIFactory.Horizontal(athleteCard.transform, 10f, 100f);
+            Image athleteCard = UIFactory.FixedPanel(stack, UITheme.Panel, 112f, "AthleteCard");
+            Transform row = UIFactory.Horizontal(athleteCard.transform, 10f, 112f);
             UIFactory.Stretch(row.GetComponent<RectTransform>(), 12, 12, 0, 0);
             Image flag = UIFactory.Panel(row, Color.white, "Flag");
             flag.sprite = FlagSpriteFactory.Get(athlete.CountryCode);
             flag.preserveAspect = true;
-            UIFactory.SetPreferredWidth(flag, 64f);
-            Text info = UIFactory.Text(row, athlete.DisplayName + "\nPB " + athlete.PersonalBest.ToString("0.00") + "s · Form " + Mathf.RoundToInt(athlete.Form * 100f) + "% · Fatigue " + Mathf.RoundToInt(athlete.Fatigue * 100f) + "%", 15, TextAnchor.MiddleLeft, UITheme.Text, FontStyle.Bold, 82f);
+            UIFactory.SetPreferredWidth(flag, 62f);
+            DistanceRecord record = athlete.GetRecord(distance);
+            string pb = record.HasPersonalBest ? PerformanceModel.FormatTime(record.PersonalBest) : "—";
+            Text info = UIFactory.Text(row, athlete.DisplayName + "\nRating " + athlete.DistanceRating(distance) + " · PB " + pb + "\nForm " + Mathf.RoundToInt(athlete.Form * 100f) + "% · Fatigue " + Mathf.RoundToInt(athlete.Fatigue * 100f) + "%", 14, TextAnchor.MiddleLeft, UITheme.Text, FontStyle.Bold, 88f);
             UIFactory.SetFlexibleWidth(info);
 
-            UIFactory.Text(stack, "STRATEGY", 16, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Bold, 28f);
-            AddStrategy(stack, RaceStrategy.ExplosiveStart, "Explosive Start", "Attack the first 40m. Best for acceleration-heavy athletes.");
-            AddStrategy(stack, RaceStrategy.Balanced, "Balanced", "Stable race profile with the lowest tactical risk.");
-            AddStrategy(stack, RaceStrategy.LatePush, "Late Push", "Save more for the final 40m. Best for strong finishers.");
+            UIFactory.Text(stack, "FIELD EXPECTATION", 15, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Bold, 25f);
+            UIFactory.Text(stack, "Expected winner: " + PerformanceModel.FormatTime(CompetitionSystem.ExpectedWinningTime(competition, athlete.Category, distance)) + " · average field: " + PerformanceModel.FormatTime(CompetitionSystem.ExpectedAverageTime(competition, athlete.Category, distance)), 13, TextAnchor.MiddleLeft, UITheme.Gold, FontStyle.Bold, 34f);
 
-            UIFactory.Button(stack, "START 100M", () => { Manager.StartRace(); Controller.OpenRace(); }, UITheme.Green, 58f);
+            UIFactory.Text(stack, "RACE STRATEGY", 15, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Bold, 25f);
+            AddStrategy(stack, RaceStrategy.FastStart, "Fast Start", (int)distance <= 400 ? "Attack early. Better for acceleration-heavy athletes." : "Push the opening phase harder, with a higher risk of fading later.");
+            AddStrategy(stack, RaceStrategy.Balanced, "Balanced", "Lowest tactical risk. Uses the athlete's normal race profile.");
+            AddStrategy(stack, RaceStrategy.LateKick, "Late Kick", (int)distance >= 400 ? "Save more for the finish. Better for endurance and mental strength." : "Hold slightly more back for the final phase.");
+
+            UIFactory.Button(stack, "START " + DomainLabels.Distance(distance).ToUpperInvariant(), () => { Manager.StartRace(); Controller.OpenRace(); }, UITheme.Green, 56f);
         }
 
         private void AddStrategy(Transform parent, RaceStrategy strategy, string title, string description)
         {
             bool active = Manager.ActiveStrategy == strategy;
-            Image card = UIFactory.FixedPanel(parent, active ? UITheme.GreenDark : UITheme.Panel, 86f, "StrategyCard");
+            Image card = UIFactory.FixedPanel(parent, active ? UITheme.GreenDark : UITheme.Panel, 82f, "StrategyCard");
             Transform inner = UIFactory.Vertical(card.transform, 2f, 10, "Inner");
             UIFactory.Stretch(inner.GetComponent<RectTransform>(), 0, 0, 0, 0);
-            UIFactory.Text(inner, title.ToUpperInvariant() + (active ? "  ✓" : ""), 16, TextAnchor.MiddleLeft, active ? UITheme.Green : UITheme.Text, FontStyle.Bold, 26f);
-            UIFactory.Text(inner, description, 13, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Normal, 30f);
-            UIFactory.Button(inner, active ? "SELECTED" : "SELECT", () => { Manager.ActiveStrategy = strategy; Refresh(); }, active ? UITheme.Green : UITheme.PanelAlt, 30f);
+            UIFactory.Text(inner, title.ToUpperInvariant() + (active ? "  ✓" : ""), 15, TextAnchor.MiddleLeft, active ? UITheme.Green : UITheme.Text, FontStyle.Bold, 24f);
+            UIFactory.Text(inner, description, 12, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Normal, 28f);
+            UIFactory.Button(inner, active ? "SELECTED" : "SELECT", () => { Manager.ActiveStrategy = strategy; Refresh(); }, active ? UITheme.Green : UITheme.PanelAlt, 28f);
         }
     }
-}
 
-namespace TrackDynasty.Mvp03.UI.Screens
-{
     public class RaceScreen : GameScreen
     {
         private class Marker
@@ -76,20 +78,18 @@ namespace TrackDynasty.Mvp03.UI.Screens
         private Text _clockText;
         private Text _leaderboardText;
         private Text _photoFinishText;
-        private float _elapsed;
+        private float _realElapsed;
+        private float _simulationSpeed = 1f;
         private bool _completed;
 
         public override void Show()
         {
-            _elapsed = 0f;
+            _realElapsed = 0f;
             _completed = false;
             base.Show();
         }
 
-        public override void Refresh()
-        {
-            Rebuild();
-        }
+        public override void Refresh() { Rebuild(); }
 
         protected override void Build()
         {
@@ -100,45 +100,40 @@ namespace TrackDynasty.Mvp03.UI.Screens
                 return;
             }
 
+            float maxTime = 0f;
+            for (int i = 0; i < result.Runners.Count; i++) maxTime = Mathf.Max(maxTime, result.Runners[i].FinishTime);
+            _simulationSpeed = Mathf.Max(1f, maxTime / 14f);
+
             Transform root = UIFactory.Vertical(Content, 8f, 12, "RaceRoot");
             UIFactory.Stretch(root.GetComponent<RectTransform>(), 0, 0, 0, 0);
-            UIFactory.Text(root, "100M · LIVE", 28, TextAnchor.MiddleCenter, UITheme.Text, FontStyle.Bold, 40f);
-            UIFactory.Text(root, result.EventName + " · " + result.City + " · " + result.Date.ShortLabel, 14, TextAnchor.MiddleCenter, UITheme.Muted, FontStyle.Normal, 26f);
-            _clockText = UIFactory.Text(root, "0.00s", 24, TextAnchor.MiddleCenter, UITheme.Gold, FontStyle.Bold, 34f);
+            UIFactory.Text(root, DomainLabels.Distance(result.Distance) + " · LIVE", 28, TextAnchor.MiddleCenter, UITheme.Text, FontStyle.Bold, 40f);
+            UIFactory.Text(root, result.EventName + " · " + result.City + " · " + result.Week.ShortLabel, 13, TextAnchor.MiddleCenter, UITheme.Muted, FontStyle.Normal, 24f);
+            _clockText = UIFactory.Text(root, "0.00s", 23, TextAnchor.MiddleCenter, UITheme.Gold, FontStyle.Bold, 34f);
 
-            Image track = UIFactory.FixedPanel(root, UITheme.Track, 520f, "Track");
+            Image track = UIFactory.FixedPanel(root, UITheme.Track, 500f, "Track");
             _trackRect = track.rectTransform;
             BuildTrack(track.transform, result);
 
-            _photoFinishText = UIFactory.Text(root, "", 18, TextAnchor.MiddleCenter, UITheme.Gold, FontStyle.Bold, 30f);
-            _leaderboardText = UIFactory.Text(root, "LIVE LEADERBOARD", 14, TextAnchor.UpperLeft, UITheme.Text, FontStyle.Normal, 98f);
-            UIFactory.Button(root, "SKIP TO RESULTS", () => Controller.OpenResults(), UITheme.PanelAlt, 38f);
+            _photoFinishText = UIFactory.Text(root, "", 17, TextAnchor.MiddleCenter, UITheme.Gold, FontStyle.Bold, 28f);
+            _leaderboardText = UIFactory.Text(root, "LIVE TOP 3", 13, TextAnchor.UpperLeft, UITheme.Text, FontStyle.Normal, 92f);
+            UIFactory.Button(root, "SKIP TO RESULTS", Controller.OpenResults, UITheme.PanelAlt, 38f);
         }
 
         private void BuildTrack(Transform track, RaceResult result)
         {
             _markers.Clear();
-            float laneHeight = 520f / 8f;
-
+            float laneHeight = 500f / 8f;
             for (int lane = 0; lane < 8; lane++)
             {
                 GameObject lineGo = UIFactory.CreateRect("LaneLine", track);
                 Image line = lineGo.AddComponent<Image>();
                 line.color = UITheme.LaneLine;
-                RectTransform lineRt = line.rectTransform;
-                lineRt.anchorMin = new Vector2(0f, 1f);
-                lineRt.anchorMax = new Vector2(1f, 1f);
-                lineRt.pivot = new Vector2(0.5f, 1f);
-                lineRt.anchoredPosition = new Vector2(0f, -lane * laneHeight);
-                lineRt.sizeDelta = new Vector2(0f, 2f);
-
-                Text laneLabel = UIFactory.Text(track, (lane + 1).ToString(), 12, TextAnchor.MiddleCenter, UITheme.Text, FontStyle.Bold, 22f);
-                RectTransform labelRt = laneLabel.rectTransform;
-                labelRt.anchorMin = new Vector2(0f, 1f);
-                labelRt.anchorMax = new Vector2(0f, 1f);
-                labelRt.pivot = new Vector2(0.5f, 0.5f);
-                labelRt.anchoredPosition = new Vector2(14f, -(lane + 0.5f) * laneHeight);
-                labelRt.sizeDelta = new Vector2(24f, 22f);
+                RectTransform rt = line.rectTransform;
+                rt.anchorMin = new Vector2(0f, 1f);
+                rt.anchorMax = new Vector2(1f, 1f);
+                rt.pivot = new Vector2(0.5f, 1f);
+                rt.anchoredPosition = new Vector2(0f, -lane * laneHeight);
+                rt.sizeDelta = new Vector2(0f, 2f);
             }
 
             for (int s = 1; s <= 5; s++)
@@ -146,13 +141,12 @@ namespace TrackDynasty.Mvp03.UI.Screens
                 float ratio = s * 0.20f;
                 GameObject splitGo = UIFactory.CreateRect("Split", track);
                 Image split = splitGo.AddComponent<Image>();
-                split.color = s == 5 ? UITheme.Gold : new Color(1f, 1f, 1f, 0.32f);
-                RectTransform splitRt = split.rectTransform;
-                splitRt.anchorMin = new Vector2(ratio, 0f);
-                splitRt.anchorMax = new Vector2(ratio, 1f);
-                splitRt.pivot = new Vector2(0.5f, 0.5f);
-                splitRt.anchoredPosition = Vector2.zero;
-                splitRt.sizeDelta = new Vector2(s == 5 ? 3f : 1f, 0f);
+                split.color = s == 5 ? UITheme.Gold : new Color(1f, 1f, 1f, 0.30f);
+                RectTransform rt = split.rectTransform;
+                rt.anchorMin = new Vector2(ratio, 0f);
+                rt.anchorMax = new Vector2(ratio, 1f);
+                rt.pivot = new Vector2(0.5f, 0.5f);
+                rt.sizeDelta = new Vector2(s == 5 ? 3f : 1f, 0f);
             }
 
             for (int i = 0; i < result.Runners.Count; i++)
@@ -172,8 +166,8 @@ namespace TrackDynasty.Mvp03.UI.Screens
                 rt.anchorMin = new Vector2(0f, 1f);
                 rt.anchorMax = new Vector2(0f, 1f);
                 rt.pivot = new Vector2(0.5f, 0.5f);
-                rt.sizeDelta = new Vector2(runner.IsPlayer ? 48f : 42f, runner.IsPlayer ? 48f : 42f);
-                rt.anchoredPosition = new Vector2(34f, -(runner.Lane - 0.5f) * laneHeight);
+                rt.sizeDelta = new Vector2(runner.IsPlayer ? 46f : 40f, runner.IsPlayer ? 46f : 40f);
+                rt.anchoredPosition = new Vector2(30f, -(runner.Lane - 0.5f) * laneHeight);
                 _markers.Add(new Marker { Runner = runner, Rect = rt });
             }
         }
@@ -181,67 +175,57 @@ namespace TrackDynasty.Mvp03.UI.Screens
         private void Update()
         {
             if (!gameObject.activeInHierarchy || Manager == null || Manager.CurrentRaceResult == null || _trackRect == null || _completed) return;
-            _elapsed += Time.deltaTime;
+            _realElapsed += Time.deltaTime;
             RaceResult result = Manager.CurrentRaceResult;
+            float raceTime = _realElapsed * _simulationSpeed;
             float width = Mathf.Max(200f, _trackRect.rect.width);
-            float startX = 34f;
-            float finishX = width - 24f;
+            float totalDistance = (float)(int)result.Distance;
 
             for (int i = 0; i < _markers.Count; i++)
             {
                 Marker marker = _markers[i];
-                float distance = RaceSimulator.DistanceAtTime(marker.Runner, _elapsed);
+                float distance = RaceSimulator.DistanceAtTime(marker.Runner, result.Distance, raceTime);
                 Vector2 pos = marker.Rect.anchoredPosition;
-                pos.x = Mathf.Lerp(startX, finishX, distance / 100f);
+                pos.x = Mathf.Lerp(30f, width - 24f, distance / totalDistance);
                 marker.Rect.anchoredPosition = pos;
             }
 
-            _clockText.text = Mathf.Min(_elapsed, result.Standings[result.Standings.Count - 1].FinishTime).ToString("0.00") + "s";
-            _leaderboardText.text = BuildLiveLeaderboard(result);
+            float finalTime = result.Standings[result.Standings.Count - 1].FinishTime;
+            _clockText.text = PerformanceModel.FormatTime(Mathf.Min(raceTime, finalTime));
+            _leaderboardText.text = BuildLiveLeaderboard(result, raceTime);
+            if (result.PhotoFinish && raceTime >= result.Standings[0].FinishTime - 0.05f) _photoFinishText.text = "PHOTO FINISH";
+            else _photoFinishText.text = "";
 
-            float winnerTime = result.Standings[0].FinishTime;
-            if (result.PhotoFinish && _elapsed >= winnerTime - 0.05f)
-                _photoFinishText.text = "PHOTO FINISH · ≤ 0.03s";
-            else
-                _photoFinishText.text = "";
-
-            float max = 0f;
-            for (int i = 0; i < result.Runners.Count; i++) max = Mathf.Max(max, result.Runners[i].FinishTime);
-            float hold = result.PhotoFinish ? 1.45f : 0.80f;
-            if (_elapsed >= max + hold)
+            if (raceTime >= finalTime && _realElapsed >= finalTime / _simulationSpeed + 0.8f)
             {
                 _completed = true;
                 Controller.OpenResults();
             }
         }
 
-        private string BuildLiveLeaderboard(RaceResult result)
+        private string BuildLiveLeaderboard(RaceResult result, float raceTime)
         {
             List<RaceRunner> runners = new List<RaceRunner>(result.Runners);
             runners.Sort((a, b) =>
             {
-                float da = RaceSimulator.DistanceAtTime(a, _elapsed);
-                float db = RaceSimulator.DistanceAtTime(b, _elapsed);
+                float da = RaceSimulator.DistanceAtTime(a, result.Distance, raceTime);
+                float db = RaceSimulator.DistanceAtTime(b, result.Distance, raceTime);
                 int compare = db.CompareTo(da);
                 return compare != 0 ? compare : a.FinishTime.CompareTo(b.FinishTime);
             });
 
-            StringBuilder sb = new StringBuilder();
-            sb.AppendLine("LIVE TOP 3");
+            StringBuilder sb = new StringBuilder("LIVE TOP 3\n");
             for (int i = 0; i < Mathf.Min(3, runners.Count); i++)
             {
-                RaceRunner r = runners[i];
-                float distance = RaceSimulator.DistanceAtTime(r, _elapsed);
-                sb.Append(i + 1).Append(". ").Append(r.CountryCode).Append("  ").Append(r.Name).Append("   ").Append(distance.ToString("0.0")).Append("m");
+                RaceRunner runner = runners[i];
+                float distance = RaceSimulator.DistanceAtTime(runner, result.Distance, raceTime);
+                sb.Append(i + 1).Append(". ").Append(runner.CountryCode).Append("  ").Append(runner.Name).Append("   ").Append(distance.ToString("0")).Append("m");
                 if (i < 2) sb.AppendLine();
             }
             return sb.ToString();
         }
     }
-}
 
-namespace TrackDynasty.Mvp03.UI.Screens
-{
     public class ResultsScreen : GameScreen
     {
         public override void Refresh() { Rebuild(); }
@@ -259,81 +243,35 @@ namespace TrackDynasty.Mvp03.UI.Screens
             ScrollRect scroll;
             Transform stack = UIFactory.ScrollContent(Content, out scroll, 14);
             UIFactory.Text(stack, result.EventName.ToUpperInvariant(), 18, TextAnchor.MiddleCenter, UITheme.Gold, FontStyle.Bold, 30f);
-            UIFactory.Text(stack, Ordinal(result.PlayerPlace) + " PLACE · " + result.PlayerTime.ToString("0.00") + "s", 32, TextAnchor.MiddleCenter, UITheme.Text, FontStyle.Bold, 50f);
-            if (result.PhotoFinish)
-                UIFactory.Text(stack, "PHOTO FINISH", 17, TextAnchor.MiddleCenter, UITheme.Gold, FontStyle.Bold, 28f);
+            UIFactory.Text(stack, DomainLabels.Distance(result.Distance) + " · " + Ordinal(result.PlayerPlace) + " PLACE", 28, TextAnchor.MiddleCenter, UITheme.Text, FontStyle.Bold, 44f);
+            UIFactory.Text(stack, PerformanceModel.FormatTime(result.PlayerTime), 32, TextAnchor.MiddleCenter, UITheme.Text, FontStyle.Bold, 48f);
+            if (result.PhotoFinish) UIFactory.Text(stack, "PHOTO FINISH", 16, TextAnchor.MiddleCenter, UITheme.Gold, FontStyle.Bold, 26f);
 
             string badges = "";
             if (result.NewPersonalBest) badges += "PB  ";
-            if (result.NewClubRecord) badges += "CR  ";
-            if (result.NewWorldRecord) badges += "WR";
-            if (!string.IsNullOrEmpty(badges))
-                UIFactory.Text(stack, badges.Trim(), 16, TextAnchor.MiddleCenter, UITheme.Green, FontStyle.Bold, 26f);
+            if (result.NewClubRecord) badges += "CR";
+            if (!string.IsNullOrEmpty(badges)) UIFactory.Text(stack, badges.Trim(), 16, TextAnchor.MiddleCenter, UITheme.Green, FontStyle.Bold, 26f);
 
-            UIFactory.Text(stack, "FULL RESULTS", 16, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Bold, 26f);
-            AddHeader(stack);
+            UIFactory.Text(stack, "FULL RESULTS", 15, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Bold, 24f);
             float winner = result.Standings[0].FinishTime;
             for (int i = 0; i < result.Standings.Count; i++)
             {
                 RaceRunner runner = result.Standings[i];
-                string runnerBadges = "";
-                if (runner.IsPlayer)
-                {
-                    if (result.NewPersonalBest) runnerBadges += " PB";
-                    if (result.NewClubRecord) runnerBadges += " CR";
-                    if (result.NewWorldRecord) runnerBadges += " WR";
-                }
-                AddResultRow(stack, i + 1, runner, winner, runnerBadges);
+                string gap = i == 0 ? "WINNER" : "+" + PerformanceModel.FormatTime(runner.FinishTime - winner);
+                UIFactory.Text(stack, (i + 1) + ".  " + runner.CountryCode + "  " + runner.Name + "   " + PerformanceModel.FormatTime(runner.FinishTime) + "   " + gap, 12, TextAnchor.MiddleLeft, runner.IsPlayer ? UITheme.Green : UITheme.Text, runner.IsPlayer ? FontStyle.Bold : FontStyle.Normal, 24f);
             }
 
             Transform rewards = UIFactory.Horizontal(stack, 8f, 64f);
             AddReward(rewards, "CASH", "+$" + result.CashReward, UITheme.Gold);
             AddReward(rewards, "REPUTATION", "+" + result.ReputationReward, UITheme.Green);
+            AddReward(rewards, "SPONSOR", "+" + Mathf.RoundToInt(result.SponsorInterestGain), UITheme.Text);
 
-            UIFactory.Text(stack, "After claiming, " + athlete.FirstName + " will receive several new competition options to choose from.", 13, TextAnchor.MiddleLeft, UITheme.Muted, FontStyle.Normal, 42f);
-            UIFactory.Button(stack, "CLAIM RESULT & CHOOSE NEXT EVENT", () =>
+            UIFactory.Button(stack, "CLAIM RESULT", () =>
             {
-                Athlete completedAthlete = Manager.ActiveAthlete;
+                Athlete completed = Manager.ActiveAthlete;
                 Manager.ClaimRaceResult();
-                Controller.OpenAthlete(completedAthlete);
-            }, UITheme.Green, 54f);
-        }
-
-        private void AddHeader(Transform parent)
-        {
-            Transform row = UIFactory.Horizontal(parent, 4f, 30f);
-            AddCell(row, "POS", 38f, UITheme.Muted, true);
-            AddCell(row, "LN", 30f, UITheme.Muted, true);
-            AddCell(row, "NAT", 44f, UITheme.Muted, true);
-            AddCell(row, "ATHLETE", -1f, UITheme.Muted, true);
-            AddCell(row, "TIME", 62f, UITheme.Muted, true);
-            AddCell(row, "GAP", 62f, UITheme.Muted, true);
-        }
-
-        private void AddResultRow(Transform parent, int place, RaceRunner runner, float winner, string badges)
-        {
-            Image background = UIFactory.FixedPanel(parent, runner.IsPlayer ? UITheme.GreenDark : UITheme.Panel, 42f, "ResultRow");
-            Transform row = UIFactory.Horizontal(background.transform, 4f, 42f);
-            UIFactory.Stretch(row.GetComponent<RectTransform>(), 4, 4, 0, 0);
-            AddCell(row, place.ToString(), 38f, runner.IsPlayer ? UITheme.Green : UITheme.Text, true);
-            AddCell(row, runner.Lane.ToString(), 30f, UITheme.Muted, false);
-
-            Image flag = UIFactory.Panel(row, Color.white, "Flag");
-            flag.sprite = FlagSpriteFactory.Get(runner.CountryCode);
-            flag.preserveAspect = true;
-            UIFactory.SetPreferredWidth(flag, 34f);
-
-            Text athlete = UIFactory.Text(row, runner.Name + badges, 12, TextAnchor.MiddleLeft, runner.IsPlayer ? UITheme.Green : UITheme.Text, runner.IsPlayer ? FontStyle.Bold : FontStyle.Normal, 40f);
-            UIFactory.SetFlexibleWidth(athlete);
-            AddCell(row, runner.FinishTime.ToString("0.00"), 62f, UITheme.Text, true);
-            string gap = place == 1 ? "—" : "+" + (runner.FinishTime - winner).ToString("0.00");
-            AddCell(row, gap, 62f, UITheme.Muted, false);
-        }
-
-        private void AddCell(Transform parent, string text, float width, Color color, bool bold)
-        {
-            Text t = UIFactory.Text(parent, text, 12, TextAnchor.MiddleCenter, color, bold ? FontStyle.Bold : FontStyle.Normal, 30f);
-            if (width > 0f) UIFactory.SetPreferredWidth(t, width); else UIFactory.SetFlexibleWidth(t);
+                Controller.OpenAthlete(completed);
+            }, UITheme.Green, 52f);
         }
 
         private void AddReward(Transform parent, string label, string value, Color color)
@@ -341,8 +279,8 @@ namespace TrackDynasty.Mvp03.UI.Screens
             Image card = UIFactory.Panel(parent, UITheme.Panel, "Reward");
             Transform inner = UIFactory.Vertical(card.transform, 0f, 4, "Inner");
             UIFactory.Stretch(inner.GetComponent<RectTransform>(), 0, 0, 0, 0);
-            UIFactory.Text(inner, label, 11, TextAnchor.MiddleCenter, UITheme.Muted, FontStyle.Bold, 20f);
-            UIFactory.Text(inner, value, 20, TextAnchor.MiddleCenter, color, FontStyle.Bold, 34f);
+            UIFactory.Text(inner, label, 10, TextAnchor.MiddleCenter, UITheme.Muted, FontStyle.Bold, 18f);
+            UIFactory.Text(inner, value, 17, TextAnchor.MiddleCenter, color, FontStyle.Bold, 30f);
         }
 
         private string Ordinal(int place)
