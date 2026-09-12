@@ -8,6 +8,9 @@ namespace TrackDynasty.Mvp03.Systems
 {
     public static class Geography
     {
+        public static readonly string[] SupportedCountries = { "POL", "GER", "FRA", "ITA", "GBR", "USA", "CAN", "NGR", "BRA" };
+        public static readonly string[] SupportedContinents = { "Europe", "North America", "South America", "Africa" };
+
         public static string ContinentForCountry(string countryCode)
         {
             switch ((countryCode ?? "POL").ToUpperInvariant())
@@ -17,6 +20,49 @@ namespace TrackDynasty.Mvp03.Systems
                 case "BRA": return "South America";
                 case "NGR": return "Africa";
                 default: return "Europe";
+            }
+        }
+
+        public static string CountryName(string code)
+        {
+            switch ((code ?? "POL").ToUpperInvariant())
+            {
+                case "GER": return "German";
+                case "FRA": return "French";
+                case "ITA": return "Italian";
+                case "GBR": return "British";
+                case "USA": return "US";
+                case "CAN": return "Canadian";
+                case "NGR": return "Nigerian";
+                case "BRA": return "Brazilian";
+                default: return "Polish";
+            }
+        }
+
+        public static string CountryCity(string code)
+        {
+            switch ((code ?? "POL").ToUpperInvariant())
+            {
+                case "GER": return "Berlin";
+                case "FRA": return "Paris";
+                case "ITA": return "Rome";
+                case "GBR": return "London";
+                case "USA": return "New York";
+                case "CAN": return "Toronto";
+                case "NGR": return "Lagos";
+                case "BRA": return "Rio de Janeiro";
+                default: return "Warsaw";
+            }
+        }
+
+        public static string ContinentCity(string continent)
+        {
+            switch (continent)
+            {
+                case "North America": return "Toronto";
+                case "South America": return "Rio de Janeiro";
+                case "Africa": return "Nairobi";
+                default: return "Berlin";
             }
         }
     }
@@ -80,7 +126,6 @@ namespace TrackDynasty.Mvp03.Systems
     public static class CompetitionSystem
     {
         private static readonly string[] PolishCities = { "Gdańsk", "Warsaw", "Poznań", "Wrocław", "Kraków", "Łódź", "Szczecin", "Lublin" };
-        private static readonly string[] EuropeanCities = { "Berlin", "Prague", "Vienna", "Rome", "Paris", "Amsterdam", "Madrid", "Stockholm" };
         private static readonly string[] WorldCities = { "London", "Tokyo", "Doha", "New York", "Sydney", "Toronto", "Rio de Janeiro", "Nairobi" };
 
         public static List<CompetitionMeet> GenerateSeason(int year)
@@ -89,18 +134,38 @@ namespace TrackDynasty.Mvp03.Systems
             for (int week = 2; week <= 52; week += 2)
             {
                 CompetitionRange range = week % 4 == 0 ? CompetitionRange.CityWide : CompetitionRange.Local;
-                result.Add(CreateMeet(year, week, range, false));
+                result.Add(CreateMeet(year, week, range, false, "POL", "Europe"));
             }
 
             for (int week = 6; week <= 48; week += 6)
-                result.Add(CreateMeet(year, week, CompetitionRange.Regional, false));
+                result.Add(CreateMeet(year, week, CompetitionRange.Regional, false, "POL", "Europe"));
 
-            result.Add(CreateMeet(year, 18, CompetitionRange.Country, true));
-            result.Add(CreateMeet(year, 34, CompetitionRange.Country, false));
-            result.Add(CreateMeet(year, 28, CompetitionRange.Continent, true));
-            result.Add(CreateMeet(year, 44, CompetitionRange.World, true));
+            for (int i = 0; i < Geography.SupportedCountries.Length; i++)
+            {
+                string country = Geography.SupportedCountries[i];
+                result.Add(CreateMeet(year, 18, CompetitionRange.Country, true, country, Geography.ContinentForCountry(country)));
+                result.Add(CreateMeet(year, 34, CompetitionRange.Country, false, country, Geography.ContinentForCountry(country)));
+            }
+
+            for (int i = 0; i < Geography.SupportedContinents.Length; i++)
+            {
+                string continent = Geography.SupportedContinents[i];
+                result.Add(CreateMeet(year, 28, CompetitionRange.Continent, true, "", continent));
+            }
+
+            result.Add(CreateMeet(year, 44, CompetitionRange.World, true, "", ""));
             result.Sort((a, b) => a.Week.CompareTo(b.Week));
             return result;
+        }
+
+        public static bool GeographyMatches(Athlete athlete, CompetitionMeet meet)
+        {
+            if (athlete == null || meet == null) return false;
+            if (meet.Range == CompetitionRange.Country)
+                return string.Equals(athlete.CountryCode, meet.CountryCode, StringComparison.OrdinalIgnoreCase);
+            if (meet.Range == CompetitionRange.Continent)
+                return Geography.ContinentForCountry(athlete.CountryCode) == meet.Continent;
+            return true;
         }
 
         public static bool CanEnter(Athlete athlete, CompetitionMeet meet, DistanceType distance)
@@ -108,9 +173,8 @@ namespace TrackDynasty.Mvp03.Systems
             if (athlete == null || meet == null || meet.Week == null) return false;
             if (meet.Distances == null || !meet.Distances.Contains(distance)) return false;
             if (meet.AllowedCategories == null || !meet.AllowedCategories.Contains(athlete.Category)) return false;
+            if (!GeographyMatches(athlete, meet)) return false;
             if (athlete.DistanceRating(distance) < RequiredRating(meet.Range)) return false;
-            if (meet.Range == CompetitionRange.Country && !string.Equals(athlete.CountryCode, meet.CountryCode, StringComparison.OrdinalIgnoreCase)) return false;
-            if (meet.Range == CompetitionRange.Continent && Geography.ContinentForCountry(athlete.CountryCode) != meet.Continent) return false;
             return true;
         }
 
@@ -144,7 +208,7 @@ namespace TrackDynasty.Mvp03.Systems
             return state.CompetitionCalendar.Find(m => m.Id == meetId);
         }
 
-        private static CompetitionMeet CreateMeet(int year, int week, CompetitionRange range, bool championship)
+        private static CompetitionMeet CreateMeet(int year, int week, CompetitionRange range, bool championship, string country, string continent)
         {
             int strength;
             int spread;
@@ -153,8 +217,6 @@ namespace TrackDynasty.Mvp03.Systems
             int rep;
             string city;
             string name;
-            string country = "POL";
-            string continent = "Europe";
 
             switch (range)
             {
@@ -172,20 +234,19 @@ namespace TrackDynasty.Mvp03.Systems
                     break;
                 case CompetitionRange.Country:
                     strength = UnityEngine.Random.Range(34, 54); spread = 11; fee = 90; cash = 500; rep = 18;
-                    city = championship ? "Warsaw" : PolishCities[UnityEngine.Random.Range(0, PolishCities.Length)]; name = championship ? "Polish Championships" : "Polish Grand Prix";
+                    city = Geography.CountryCity(country); name = Geography.CountryName(country) + (championship ? " Championships" : " Grand Prix");
                     break;
                 case CompetitionRange.Continent:
                     strength = UnityEngine.Random.Range(53, 72); spread = 10; fee = 180; cash = 1500; rep = 45;
-                    city = EuropeanCities[UnityEngine.Random.Range(0, EuropeanCities.Length)]; name = championship ? "European Championships" : "European Athletics Classic";
+                    city = Geography.ContinentCity(continent); name = continent + (championship ? " Championships" : " Athletics Classic");
                     break;
                 default:
                     strength = UnityEngine.Random.Range(72, 91); spread = 9; fee = 350; cash = 5000; rep = 100;
                     city = WorldCities[UnityEngine.Random.Range(0, WorldCities.Length)]; name = championship ? "World Championships" : "World Athletics Gala";
-                    country = ""; continent = "";
                     break;
             }
 
-            CompetitionMeet meet = new CompetitionMeet
+            return new CompetitionMeet
             {
                 Id = Guid.NewGuid().ToString("N"),
                 Name = name,
@@ -203,14 +264,11 @@ namespace TrackDynasty.Mvp03.Systems
                 AllowedCategories = CategoriesForRange(range),
                 Distances = new List<DistanceType> { DistanceType.M100, DistanceType.M200, DistanceType.M400, DistanceType.M800, DistanceType.M1500 }
             };
-            return meet;
         }
 
         private static List<AgeCategory> CategoriesForRange(CompetitionRange range)
         {
-            if (range == CompetitionRange.Local || range == CompetitionRange.CityWide)
-                return new List<AgeCategory> { AgeCategory.U10, AgeCategory.U12, AgeCategory.U14, AgeCategory.U16, AgeCategory.U18, AgeCategory.Junior, AgeCategory.Adult, AgeCategory.Senior };
-            if (range == CompetitionRange.Regional)
+            if (range == CompetitionRange.Local || range == CompetitionRange.CityWide || range == CompetitionRange.Regional)
                 return new List<AgeCategory> { AgeCategory.U10, AgeCategory.U12, AgeCategory.U14, AgeCategory.U16, AgeCategory.U18, AgeCategory.Junior, AgeCategory.Adult, AgeCategory.Senior };
             if (range == CompetitionRange.Country)
                 return new List<AgeCategory> { AgeCategory.U14, AgeCategory.U16, AgeCategory.U18, AgeCategory.Junior, AgeCategory.Adult, AgeCategory.Senior };
